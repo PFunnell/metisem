@@ -91,10 +91,10 @@ def save_embeddings_to_cache(cache_path, embeddings_data):
         print(f"Error: Could not save embedding cache to {cache_path}: {e}")
 
 
-def generate_embeddings(file_paths, contents, model, batch_size, device, cache_dir, force_embeddings):
+def generate_embeddings(file_paths, contents, model, batch_size, device, cache_dir, force_embeddings, model_name):
     """Generates embeddings for file contents, using caching."""
     vault_path = os.path.commonpath(file_paths) if file_paths else '.'
-    cache_filename = f"embeddings_{Path(vault_path).name}_{model.replace('/', '_')}.npy"
+    cache_filename = f"embeddings_{Path(vault_path).name}_{model_name.replace('/', '_')}.npy"
     cache_path = os.path.join(cache_dir, cache_filename)
 
     cached_embeddings = {}
@@ -353,7 +353,7 @@ def main():
     # Read contents lazily only if needed for embedding generation inside the function
     # We pass paths and let the function handle reading/caching
     embeddings, valid_file_paths = generate_embeddings(
-        all_files, None, model, args.batch_size, device, cache_dir_path, args.force_embeddings
+    all_files, None, model, args.batch_size, device, cache_dir_path, args.force_embeddings, args.model
     )
 
     if len(valid_file_paths) == 0:
