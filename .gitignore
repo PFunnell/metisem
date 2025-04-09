@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment specific (if created inside project - usually not recommended for conda)
+# /obsidian_linker_env/
+
+# VS Code settings
+.vscode/
+
+# Embedding cache
+.obsidian_linker_cache/
+
+# OS generated files
+.DS_Store
+Thumbs.db
