@@ -17,6 +17,7 @@ from tqdm import tqdm
 EMBEDDING_CACHE_DIR = ".obsidian_linker_cache" # Store cache in a hidden dir
 YAML_FRONT_MATTER_SEP = '---'
 TAGS_KEY = 'tags' # Standard key for tags in Obsidian YAML
+TAG_DESC_SEPARATOR = '::' # Separator for tag name and description in tags file
 
 # --- Helper Functions ---
 
@@ -229,29 +230,56 @@ def generate_embeddings(texts_or_paths, model, model_name_for_cache, batch_size,
 
     else:
         # --- Simple Text Embedding (No Caching) ---
-        texts = texts_or_paths
-        if not texts: return np.array([]), []
-        print(f"Generating embeddings for {len(texts)} tags...")
+        # texts_or_paths is expected to be a list of strings (descriptions)
+        texts_to_embed = texts_or_paths
+        if not texts_to_embed: return np.array([]), []
+        print(f"Generating embeddings for {len(texts_to_embed)} tag descriptions...")
         embeddings = model.encode(
-            texts,
+            texts_to_embed,
             batch_size=batch_size,
             show_progress_bar=True,
             device=device,
             convert_to_numpy=True
         )
-        print("Tag embedding complete.")
-        return embeddings, texts # Return embeddings and the original texts
+        print("Tag description embedding complete.")
+        # Return embeddings and the original descriptions that were embedded
+        return embeddings, texts_to_embed
 
 def load_tags(filepath):
-    """Loads tags from a file, one tag per line."""
+    """
+    Loads tags and their descriptions from a file.
+    Expects format: tag_name<SEPARATOR>Description
+    Returns a dictionary mapping tag_name -> description.
+    """
+    tags_dict = {}
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            tags = [line.strip() for line in f if line.strip()]
-        if not tags:
-            print(f"Warning: No tags found in {filepath}")
-            return []
-        print(f"Loaded {len(tags)} tags from {filepath}")
-        return tags
+            for i, line in enumerate(f):
+                line = line.strip()
+                if not line or line.startswith('#'): # Skip empty lines and comments
+                    continue
+                if TAG_DESC_SEPARATOR in line:
+                    parts = line.split(TAG_DESC_SEPARATOR, 1)
+                    tag_name = parts[0].strip()
+                    description = parts[1].strip()
+                    if not tag_name:
+                         print(f"Warning: Skipping line {i+1} in tags file due to missing tag name before separator.")
+                         continue
+                    if not description:
+                         print(f"Warning: Tag '{tag_name}' on line {i+1} has no description after separator. Using tag name as description.")
+                         description = tag_name # Fallback
+                    tags_dict[tag_name] = description
+                else:
+                    # No separator found, treat the whole line as the tag name and description
+                    tag_name = line
+                    print(f"Warning: No separator '{TAG_DESC_SEPARATOR}' found on line {i+1}. Using '{tag_name}' as both tag and description.")
+                    tags_dict[tag_name] = tag_name
+
+        if not tags_dict:
+            print(f"Warning: No valid tags found in {filepath}")
+            return {}
+        print(f"Loaded {len(tags_dict)} tags with descriptions from {filepath}")
+        return tags_dict
     except FileNotFoundError:
         print(f"Error: Tags file not found at {filepath}")
         return None
@@ -310,9 +338,15 @@ def add_tag_to_markdown(filepath, tag_to_add):
             modified = True # Type changed
 
         # Add the new tag if it's not already present
-        if tag_to_add not in front_matter_dict[TAGS_KEY]:
-            front_matter_dict[TAGS_KEY].append(tag_to_add)
-            front_matter_dict[TAGS_KEY].sort() # Keep tags sorted alphabetically
+        # Ensure tag_to_add is a string
+        tag_to_add_str = str(tag_to_add)
+        if tag_to_add_str not in front_matter_dict[TAGS_KEY]:
+            front_matter_dict[TAGS_KEY].append(tag_to_add_str)
+            # Sort tags only if they are strings, handle potential mixed types gracefully
+            try:
+                front_matter_dict[TAGS_KEY].sort()
+            except TypeError:
+                 print(f"Warning: Could not sort tags in {filepath.name} due to mixed types.")
             modified = True
         else:
             # Tag already present, no modification needed for *this* operation
@@ -416,7 +450,7 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze markdown files and assign the best fitting tag from a list based on semantic similarity, or remove all tags.")
     parser.add_argument("vault_path", help="Path to the Obsidian vault directory.")
     # Tagging options (mutually exclusive with --remove-tags)
-    parser.add_argument("--tags-file", help="Path to a text file containing possible tags (one per line). Required unless --remove-tags is used.")
+    parser.add_argument("--tags-file", help=f"Path to a text file containing possible tags (Format: tag_name{TAG_DESC_SEPARATOR}Description). Required unless --remove-tags is used.")
     parser.add_argument("--apply-tags", action="store_true", help="Modify markdown files to insert the best-fit tag into YAML front matter. Use with --tags-file.")
     # Removal option (mutually exclusive with tagging)
     parser.add_argument("--remove-tags", action="store_true", help="Remove the 'tags' key from YAML front matter in all processed files. Overrides tagging options.")
@@ -478,11 +512,15 @@ def main():
     os.makedirs(cache_dir_path, exist_ok=True)
 
     # --- Core Tagging Logic ---
-    # 1. Load Tags
-    tags = load_tags(args.tags_file)
-    if tags is None or not tags:
+    # 1. Load Tags (Now expects dictionary: tag_name -> description)
+    tags_data = load_tags(args.tags_file)
+    if tags_data is None or not tags_data:
         print("Could not load tags or tags file is empty. Exiting.")
         return
+    # Prepare lists needed for embedding and mapping back
+    tag_names = list(tags_data.keys())
+    tag_descriptions = list(tags_data.values())
+
 
     # 2. Find Files
     all_files = find_markdown_files(args.vault_path)
@@ -510,22 +548,28 @@ def main():
     if len(valid_doc_paths) != len(all_files):
          print(f"Warning: Processed {len(valid_doc_paths)} files out of {len(all_files)} due to errors or skips.")
 
-    # 5. Generate Tag Embeddings (no cache needed, usually fast)
-    tag_embeddings, valid_tags = generate_embeddings(
-        tags, model_instance, args.model, args.batch_size, device, is_document=False
+    # 5. Generate Tag Embeddings (Embed descriptions, not names)
+    tag_embeddings, _ = generate_embeddings( # We don't need the returned descriptions here
+        tag_descriptions, model_instance, args.model, args.batch_size, device, is_document=False
     )
-    if len(valid_tags) == 0:
+    if tag_embeddings.shape[0] == 0: # Check if any tag embeddings were generated
         print("Stopping due to lack of valid tag embeddings.")
         return
 
     # 6. Calculate Document-Tag Similarities
     print("Calculating document-tag similarity matrix...")
+    # Ensure doc_embeddings is not empty before calculating similarity
+    if doc_embeddings.shape[0] == 0:
+         print("Error: No document embeddings available to calculate similarity.")
+         return
+
     similarity_matrix = cosine_similarity(doc_embeddings, tag_embeddings)
     print(f"Similarity matrix shape: {similarity_matrix.shape}") # Should be (num_docs x num_tags)
 
     # 7. Find Best Tag for Each Document
     best_tag_indices = np.argmax(similarity_matrix, axis=1) # Find index of max similarity for each row (doc)
-    doc_to_best_tag = {doc_path: valid_tags[tag_index] for doc_path, tag_index in zip(valid_doc_paths, best_tag_indices)}
+    # Map the index back to the original tag name using the ordered list tag_names
+    doc_to_best_tag_name = {doc_path: tag_names[tag_index] for doc_path, tag_index in zip(valid_doc_paths, best_tag_indices)}
 
     # 8. Apply Tags (if requested)
     if args.apply_tags:
@@ -533,9 +577,9 @@ def main():
         files_modified_count = 0
         # files_error_count = 0 # Optional: track errors separately
 
-        for file_path, best_tag in tqdm(doc_to_best_tag.items(), desc="Applying tags"):
+        for file_path, best_tag_name in tqdm(doc_to_best_tag_name.items(), desc="Applying tags"):
             # Pass file_path which is already a Path object
-            success = add_tag_to_markdown(file_path, best_tag)
+            success = add_tag_to_markdown(file_path, best_tag_name) # Add the tag NAME
             if success:
                 files_modified_count += 1
             # else: # Optional error tracking
@@ -551,12 +595,12 @@ def main():
         # --- Dry Run Summary for Tagging ---
         print("\n--- Dry Run Summary (Add Tags Mode) ---")
         print(f"Files processed: {len(valid_doc_paths)}")
-        print(f"Tags considered: {len(valid_tags)}")
-        print("Best tag mapping found (not applied):")
+        print(f"Tags considered: {len(tag_names)}")
+        print("Best tag mapping found (based on description similarity, applying tag name):")
         count = 0
-        for doc_path, best_tag in doc_to_best_tag.items():
+        for doc_path, best_tag_name in doc_to_best_tag_name.items():
             if count < 10: # Print for first 10 files
-                print(f"  - {doc_path.name} -> #{best_tag}")
+                print(f"  - {doc_path.name} -> #{best_tag_name}")
                 count +=1
             elif count == 10:
                  print("  - ... (and potentially many more)")

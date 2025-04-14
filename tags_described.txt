@@ -1,3 +1,4 @@
+# tags.txt example with descriptions
 local_government::Topics related to city councils, county administration, public services, local regulations, and municipal operations.
 AI_and_automation::Discussions about artificial intelligence techniques, machine learning models, automation processes, algorithms, and their implementation in various systems.
 data_platforms::Focus on databases, data lakes, data warehouses, data pipelines, ETL processes, data infrastructure, and related technologies like Spark or Kafka.
