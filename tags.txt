@@ -1,0 +1,12 @@
+local_government
+AI_and_automation
+data_platforms
+user_experience
+ethics_and_policy
+neurodivergence
+education
+productivity
+personal_insight
+fundraising_and_impact
+arts_and_cognition
+system_design
