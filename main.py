@@ -12,8 +12,8 @@ import torch
 from tqdm import tqdm
 
 # --- Constants ---
-LINK_SECTION_START = ""
-LINK_SECTION_END = ""
+LINK_SECTION_START = "<!-- AUTO-GENERATED LINKS START -->"
+LINK_SECTION_END = "<!-- AUTO-GENERATED LINKS END -->"
 EMBEDDING_CACHE_DIR = ".obsidian_linker_cache" # Store cache in a hidden dir
 
 # --- Helper Functions ---
@@ -217,6 +217,7 @@ def find_links(similarity_matrix, file_paths, threshold, min_links, max_links):
     return links
 
 
+# filepath: d:\dev\obsidian-linker\main.py
 def modify_markdown_file(filepath, links_to_add, delete_existing):
     """Adds or updates a list of wikilinks in a specified section of a markdown file."""
     try:
@@ -229,55 +230,55 @@ def modify_markdown_file(filepath, links_to_add, delete_existing):
                 relative_path = os.path.relpath(target_path, filepath.parent)
                 # Obsidian prefers links without the .md extension
                 link_target = Path(relative_path).stem
-                # Obsidian often uses URL encoding for spaces etc. but wikilinks handle them.
-                # Keep it simple: use the stem directly.
                 relative_links.append(f"[[{link_target}]]")
-            except ValueError: # Happens if paths are on different drives on Windows
-                 relative_links.append(f"[[{target_path.stem}]]")
-
+            except ValueError:  # Happens if paths are on different drives on Windows
+                relative_links.append(f"[[{target_path.stem}]]")
 
         link_block = f"\n{LINK_SECTION_START}\n## Related Notes\n"
-        link_block += "\n".join(sorted(list(set(relative_links)))) # Sort and ensure unique
+        link_block += "\n".join(sorted(list(set(relative_links))))  # Sort and ensure unique
         link_block += f"\n{LINK_SECTION_END}\n"
 
         # Use regex to find existing block, accounting for potential whitespace variations
-        pattern = re.compile(r"\n*" + re.escape(LINK_SECTION_START) + r".*?" + re.escape(LINK_SECTION_END) + r"\n*", re.DOTALL)
+        pattern = re.compile(
+            rf"{re.escape(LINK_SECTION_START)}.*?{re.escape(LINK_SECTION_END)}",
+            re.DOTALL,
+        )
         existing_block_match = pattern.search(content)
 
         if delete_existing and existing_block_match:
             # Remove existing block completely before adding the new one
-            content = pattern.sub('', content)
+            content = pattern.sub("", content)
             print(f"Removed existing link block from {filepath.name}")
-            existing_block_match = None # Ensure we append if no links_to_add
 
         if not links_to_add:
             # If no links to add and we deleted the block, we're done.
-             if delete_existing and existing_block_match:
-                  filepath.write_text(content, encoding='utf-8')
-                  print(f"Removed link block (no new links) in {filepath.name}")
-             else:
-                  print(f"No links to add or modify for {filepath.name}")
-             return 0 # No links added
+            if delete_existing and existing_block_match:
+                filepath.write_text(content, encoding='utf-8')
+                print(f"Removed link block (no new links) in {filepath.name}")
+            else:
+                print(f"No links to add or modify for {filepath.name}")
+            return 0  # No links added
 
         if existing_block_match:
-             # Replace existing block
-             new_content = pattern.sub(link_block, content)
-             if new_content != content:
-                 filepath.write_text(new_content, encoding='utf-8')
-                 print(f"Updated links in {filepath.name}")
-                 return len(relative_links)
-             else:
-                 print(f"Links unchanged in {filepath.name}")
-                 return 0
+            # Replace existing block
+            new_content = pattern.sub(link_block, content)
+            if new_content != content:
+                filepath.write_text(new_content, encoding='utf-8')
+                print(f"Updated links in {filepath.name}")
+                return len(relative_links)
+            else:
+                print(f"Links unchanged in {filepath.name}")
+                return 0
         else:
-             # Append new block
-             filepath.write_text(content.rstrip() + link_block, encoding='utf-8')
-             print(f"Added new link block to {filepath.name}")
-             return len(relative_links)
+            # Append new block
+            new_content = content.rstrip() + "\n\n" + link_block
+            filepath.write_text(new_content, encoding='utf-8')
+            print(f"Added new link block to {filepath.name}")
+            return len(relative_links)
 
     except Exception as e:
         print(f"Error: Could not modify file {filepath}: {e}")
-        return -1 # Indicate error
+        return -1  # Indicate error
 
 # --- Main Execution ---
 
