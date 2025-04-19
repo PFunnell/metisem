@@ -46,13 +46,29 @@ def init_summarizer(model_dir):
     print(f"Loading model on {device}…")
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
     bnb_cfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
+    from transformers import BitsAndBytesConfig  # add at top of file if not already
+
+  
+    tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
+
+    # new NF4‐quantized 4‑bit setup:
+    quant_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",            # switch to NF4 quant
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=torch.bfloat16
+    )
     model = AutoModelForCausalLM.from_pretrained(
         model_dir,
-        quantization_config=bnb_cfg,
-        device_map='auto',
-        local_files_only=True
+        quantization_config=quant_config,
+        device_map="auto",
+        trust_remote_code=True,
     )
+    # force initialization of the 4‑bit layers on GPU
+    model = model.to(device)
+
     return tokenizer, model
+
 
 def summarize_text(tokenizer, model, text, max_length):
     """Generate a summary of `text` up to `max_length` new tokens."""
