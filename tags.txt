@@ -1,12 +1,15 @@
 local_government::Topics related to city councils, county administration, public services, local regulations, and municipal operations.
+social_care::The services provided by a local authority to provide care for vulnerable children and adults.
 AI_and_automation::Discussions about artificial intelligence techniques, machine learning models, automation processes, algorithms, and their implementation in various systems.
 data_platforms::Focus on databases, data lakes, data warehouses, data pipelines, ETL processes, data infrastructure, and related technologies like Spark or Kafka.
+cloud_computing::Azure, AWS Amazon Web Services, GCP Google Cloud Platform
 user_experience::Topics concerning usability, user interface design, interaction design, user research, accessibility, and overall user satisfaction with products or services.
 ethics_and_policy::Discussions on ethical implications, bias in AI, data privacy, regulations (like GDPR), responsible technology development, and policy making related to technology.
 neurodivergence::Conversations about neurodevelopmental conditions like ADHD, autism, dyslexia, cognitive differences, accessibility needs, and related support strategies.
 education::Matters related to learning, teaching methods, educational technology (EdTech), curriculum development, academic institutions, and skill acquisition.
 productivity::Techniques, tools, software, and strategies for improving efficiency, time management, workflow optimization, and getting things done.
 personal_insight::Reflections, self-analysis, personal thoughts, conclusions drawn from individual experience, life lessons, and subjective viewpoints.
-fundraising_and_impact::Topics concerning securing funding, grants, donations, measuring social or business impact, non-profit operations, and venture capital.
-arts_and_cognition::Exploration of the relationship between creative arts (music, visual arts, literature), cognitive processes, perception, emotion, and brain function.
+funding_and_impact::Topics concerning securing funding, grants, donations, measuring social or business impact, non-profit operations, and venture capital.
+arts_and_culture::Exploration of the relationship between creative arts (music, visual arts, literature).
+philosophy_and_congnition::Theory of mind, religion, cognitive processes, perception, emotion, and brain function.
 system_design::Discussions on designing complex systems, software architecture, distributed systems, scalability, reliability, APIs, microservices, and architectural patterns.

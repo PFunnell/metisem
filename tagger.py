@@ -1,614 +1,216 @@
 import os
-import glob
-import argparse
 import re
-from pathlib import Path
+import argparse
 import hashlib
-import yaml # For YAML front matter handling
-from io import StringIO # To handle string IO for YAML parsing
-
+from pathlib import Path
+import yaml
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 import torch
 from tqdm import tqdm
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # --- Constants ---
-EMBEDDING_CACHE_DIR = ".obsidian_linker_cache" # Store cache in a hidden dir
-YAML_FRONT_MATTER_SEP = '---'
-TAGS_KEY = 'tags' # Standard key for tags in Obsidian YAML
-TAG_DESC_SEPARATOR = '::' # Separator for tag name and description in tags file
+CACHE_DIR = ".obsidian_linker_cache"
+YAML_SEP = '---'
+TAGS_KEY = 'tags'
+TAG_DESC_SEP = '::'
 
-# --- Helper Functions ---
+# --- File Utilities ---
 
-def find_markdown_files(vault_path):
-    """Recursively finds all markdown files in the vault path."""
-    print(f"Searching for Markdown files in: {vault_path}")
-    files = list(glob.glob(os.path.join(vault_path, '**', '*.md'), recursive=True))
-    print(f"Found {len(files)} markdown files.")
-    return [Path(f) for f in files]
+def find_markdown_files(vault):
+    return list(Path(vault).rglob('*.md'))
 
-def read_file_content(filepath):
-    """Reads content and extracts a title (filename) from a file."""
-    try:
-        # Read the whole file first
-        full_content = filepath.read_text(encoding='utf-8')
 
-        # Basic front matter extraction (doesn't need full parsing here)
-        # We only need the main content for embedding
-        # Use regex to handle different line endings and ensure correct splitting
-        pattern = re.compile(r'^(' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*?)(\r?\n' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*)', re.DOTALL | re.MULTILINE)
-        match = pattern.match(full_content)
+def read_and_hash(path):
+    text = path.read_text(encoding='utf-8')
+    h = hashlib.sha256(text.encode('utf-8')).hexdigest()
+    return text, h
 
-        if match:
-            # Has front matter
-            main_content = match.group(4) # Content after the second '---'
+# --- Caching ---
+
+def cache_filepath(vault, model_name):
+    vault_name = Path(vault).resolve().name.replace('/', '_')
+    safe_name = model_name.replace('/', '_')
+    return Path(vault) / CACHE_DIR / f'embeddings_{vault_name}_{safe_name}.npz'
+
+
+def load_cache(cp):
+    if cp.exists():
+        data = np.load(cp, allow_pickle=True)
+        return {Path(p): {'hash': h, 'emb': e} for p, h, e in zip(data['paths'], data['hashes'], data['embs'])}
+    return {}
+
+
+def save_cache(cp, mapping):
+    cp.parent.mkdir(exist_ok=True)
+    paths = np.array([str(p) for p in mapping])
+    hashes = np.array([mapping[p]['hash'] for p in mapping])
+    embs = np.stack([mapping[p]['emb'] for p in mapping])
+    np.savez(cp, paths=paths, hashes=hashes, embs=embs)
+
+# --- Embedding ---
+
+def embed_texts(texts, model, batch, device):
+    return model.encode(texts, batch_size=batch, show_progress_bar=True, device=device, convert_to_numpy=True)
+
+
+def embed_documents(files, model, model_name, batch, device, vault, force):
+    cp = cache_filepath(vault, model_name)
+    cached = {} if force else load_cache(cp)
+    to_process = []
+    mapping = {}
+    for p in files:
+        content, h = read_and_hash(p)
+        if p in cached and cached[p]['hash'] == h:
+            mapping[p] = cached[p]
         else:
-            # No front matter or improperly formatted
-            main_content = full_content
+            to_process.append((p, content, h))
+    if to_process:
+        texts = [tpl[1] for tpl in to_process]
+        embs = embed_texts(texts, model, batch, device)
+        for (p, _, h), e in zip(to_process, embs):
+            mapping[p] = {'hash': h, 'emb': e}
+        save_cache(cp, mapping)
+    paths = list(mapping)
+    embs = np.stack([mapping[p]['emb'] for p in paths])
+    return embs, paths
 
-        title = filepath.stem # Filename without extension
-        return title, main_content.strip() # Return stripped main content
-    except Exception as e:
-        print(f"Warning: Could not read file {filepath}: {e}")
-        return None, None
+# --- Tag Loading ---
 
-def get_file_hash(filepath):
-    """Calculates the SHA256 hash of a file's content."""
-    hasher = hashlib.sha256()
-    try:
-        # Hash the *entire* file content including potential front matter
-        # This ensures embedding is recalculated if front matter OR content changes
-        with open(filepath, 'rb') as f:
-            while True:
-                chunk = f.read(4096)
-                if not chunk:
-                    break
-                hasher.update(chunk)
-        return hasher.hexdigest()
-    except Exception as e:
-        print(f"Warning: Could not calculate hash for {filepath}: {e}")
-        return None
-
-def load_embeddings_from_cache(cache_path):
-    """Loads embeddings and corresponding file info from cache."""
-    try:
-        data = np.load(cache_path, allow_pickle=True)
-        if data.dtype.names:
-             # Using structured array for path, hash, embedding
-            cached_data = {Path(item['path']): {'hash': item['hash'], 'embedding': item['embedding']} for item in data} # Convert path back to Path object
+def load_tags(file):
+    tags = {}
+    for line in Path(file).read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if TAG_DESC_SEP in line:
+            name, desc = map(str.strip, line.split(TAG_DESC_SEP, 1))
         else:
-             # Older format fallback (less robust) - This path might need adjustment if it was saved differently
-             cached_data_raw = data.item()
-             cached_data = {Path(k): v for k, v in cached_data_raw.items()} # Convert keys to Path
-        print(f"Loaded {len(cached_data)} embeddings from cache: {cache_path}")
-        return cached_data
-    except FileNotFoundError:
-        print("Embedding cache not found.")
-        return {}
-    except Exception as e:
-        print(f"Warning: Could not load embedding cache from {cache_path}: {e}")
-        return {}
+            name = desc = line
+        if name:
+            tags[name] = desc or name
+    return tags
 
-def save_embeddings_to_cache(cache_path, embeddings_data):
-    """Saves embeddings and file info to cache using a structured NumPy array."""
-    try:
-        if not embeddings_data:
-             print("No embedding data to save.")
-             return
+# --- Front Matter Manipulation ---
 
-        # Ensure keys are strings for saving path length calculation
-        str_keys = [str(p) for p in embeddings_data.keys()]
-        max_path_len = max(len(p) for p in str_keys) if str_keys else 100
-
-        # Use embedding dim from the first item, assume consistency
-        embedding_dim = len(next(iter(embeddings_data.values()))['embedding'])
-        dtype = [('path', f'U{max_path_len}'), ('hash', 'U64'), ('embedding', f'{embedding_dim}f4')] # f4=float32
-
-        structured_data = np.array(
-            [(str(path), data['hash'], data['embedding']) for path, data in embeddings_data.items()],
-            dtype=dtype
-        )
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-        np.save(cache_path, structured_data, allow_pickle=False) # Prefer non-pickle format
-        print(f"Saved {len(embeddings_data)} embeddings to cache: {cache_path}")
-    except Exception as e:
-        print(f"Error: Could not save embedding cache to {cache_path}: {e}")
-
-def generate_embeddings(texts_or_paths, model, model_name_for_cache, batch_size, device, cache_dir=None, force_embeddings=False, is_document=True):
-    """
-    Generates embeddings for file contents (using cache) or simple texts (no cache).
-
-    Args:
-        texts_or_paths: List of file paths (if is_document=True) or list of strings (if is_document=False).
-        model: The SentenceTransformer model instance.
-        model_name_for_cache (str): The string name of the model (e.g., 'all-MiniLM-L6-v2') used for cache filename uniqueness.
-        batch_size: Batch size for encoding.
-        device: 'cuda' or 'cpu'.
-        cache_dir: Directory for caching (only used if is_document=True).
-        force_embeddings: Force regeneration even if cache exists (only used if is_document=True).
-        is_document: Boolean indicating if input is file paths (True) or raw texts (False).
-
-    Returns:
-        Tuple: (numpy array of embeddings, list of valid corresponding paths/texts)
-    """
-    if is_document:
-        # --- Document Embedding with Caching ---
-        file_paths = texts_or_paths
-        if not file_paths: return np.array([]), []
-
-        vault_path = os.path.commonpath(file_paths) if file_paths else '.'
-        safe_model_name = model_name_for_cache.replace('/', '_').replace('\\', '_') # Make path safe
-        cache_filename = f"embeddings_{Path(vault_path).name}_{safe_model_name}.npy"
-        cache_path = os.path.join(cache_dir, cache_filename)
-
-        cached_embeddings = {}
-        if not force_embeddings and cache_dir:
-            cached_embeddings = load_embeddings_from_cache(cache_path)
-
-        embeddings_map = {} # path -> {hash, embedding}
-        texts_to_embed_map = {} # path -> content
-        paths_to_process = []
-        hashes_map = {} # path -> hash
-
-        print("Checking file hashes for document embedding cache...")
-        for path in tqdm(file_paths, desc="Hashing files"):
-            # Ensure path is a Path object before checking cache
-            path_obj = Path(path)
-            file_hash = get_file_hash(path_obj)
-            if file_hash:
-                hashes_map[path_obj] = file_hash
-                paths_to_process.append(path_obj) # Keep track of files we could hash
-                # Check cache using Path object key
-                if path_obj in cached_embeddings and cached_embeddings[path_obj]['hash'] == file_hash:
-                    embeddings_map[path_obj] = cached_embeddings[path_obj] # Use cached embedding
-                else:
-                    # Need to generate embedding for this file, read content later
-                    pass # Mark for embedding
-            else:
-                 print(f"Skipping {path_obj} due to hashing error.")
+def write_front_matter(path, data, rest):
+    fm = yaml.safe_dump(data, sort_keys=False).strip()
+    new = f"{YAML_SEP}\n{fm}\n{YAML_SEP}\n{rest.lstrip()}"
+    path.write_text(new, encoding='utf-8')
 
 
-        print(f"{len(embeddings_map)} document embeddings loaded from cache.")
-        # Read content only for files needing embedding
-        paths_needing_embedding = [p for p in paths_to_process if p not in embeddings_map]
-        print(f"Reading content for {len(paths_needing_embedding)} files needing embedding...")
-        for path in tqdm(paths_needing_embedding, desc="Reading files"):
-             _, content = read_file_content(path) # path is already Path object
-             if content is not None:
-                 texts_to_embed_map[path] = content
-             else:
-                 print(f"Skipping {path} due to read error during embedding check.")
-                 # Remove from hashes_map if read failed, so it's not saved later
-                 if path in hashes_map: del hashes_map[path]
+def remove_tags(path):
+    text = path.read_text(encoding='utf-8')
+    # Match the YAML front‑matter block (start and end “---”)
+    fm_match = re.match(
+        r'^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)',
+        text,
+        flags=re.MULTILINE
+    )
+    if not fm_match:
+        return False
 
+    fm_content, rest = fm_match.group(1), fm_match.group(2)
+    lines = fm_content.splitlines()
+    new_lines = []
+    skip = False
 
-        if not texts_to_embed_map:
-            print("All document embeddings up-to-date or loaded from cache.")
-        else:
-            print(f"Generating embeddings for {len(texts_to_embed_map)} documents...")
-            # Ensure order matches for embedding assignment
-            paths_to_embed_ordered = list(texts_to_embed_map.keys())
-            texts_to_embed_ordered = [texts_to_embed_map[p] for p in paths_to_embed_ordered]
+    for line in lines:
+        if skip:
+            # skip every “- item” list line under tags:
+            if re.match(r'^\s*-\s+\S+', line):
+                continue
+            skip = False
 
-            new_embeddings_list = model.encode(
-                texts_to_embed_ordered,
-                batch_size=batch_size,
-                show_progress_bar=True,
-                device=device,
-                convert_to_numpy=True
-            )
+        # if we hit “tags:” at top level, start skipping its block
+        if re.match(rf'^\s*{TAGS_KEY}\s*:\s*$', line):
+            skip = True
+            continue
 
-            # Add newly generated embeddings to the map
-            for i, path in enumerate(paths_to_embed_ordered):
-               if path in hashes_map: # Ensure hash was calculated and read succeeded
-                   embeddings_map[path] = {'hash': hashes_map[path], 'embedding': new_embeddings_list[i]}
+        new_lines.append(line)
 
-        # Save updated cache if changes were made or forced
-        if texts_to_embed_map or force_embeddings:
-           if cache_dir:
-               save_embeddings_to_cache(cache_path, embeddings_map)
-           else:
-               print("Warning: Cache directory not provided, embeddings not saved.")
+    # nothing changed: no tags key or empty tags
+    if len(new_lines) == len(lines) and not skip:
+        return False
 
-        # Return embeddings in the original order of file_paths
-        final_embeddings = []
-        valid_paths = []
-        for path in file_paths: # Iterate through original list to maintain order
-            path_obj = Path(path) # Ensure we use Path object for lookup
-            if path_obj in embeddings_map:
-                final_embeddings.append(embeddings_map[path_obj]['embedding'])
-                valid_paths.append(path_obj) # Return list of Path objects
-            # else:
-            #    print(f"Warning: No embedding found or generated for {path}. It might have been skipped due to errors.")
-
-        if not final_embeddings:
-            print("Error: No document embeddings were generated or loaded successfully.")
-            return np.array([]), []
-
-        return np.array(final_embeddings), valid_paths
-
+    # write back updated front matter or drop it entirely
+    if new_lines:
+        new_fm = "\n".join(new_lines)
+        new_content = f"---\n{new_fm}\n---\n{rest.lstrip()}"
+        path.write_text(new_content, encoding='utf-8')
     else:
-        # --- Simple Text Embedding (No Caching) ---
-        # texts_or_paths is expected to be a list of strings (descriptions)
-        texts_to_embed = texts_or_paths
-        if not texts_to_embed: return np.array([]), []
-        print(f"Generating embeddings for {len(texts_to_embed)} tag descriptions...")
-        embeddings = model.encode(
-            texts_to_embed,
-            batch_size=batch_size,
-            show_progress_bar=True,
-            device=device,
-            convert_to_numpy=True
-        )
-        print("Tag description embedding complete.")
-        # Return embeddings and the original descriptions that were embedded
-        return embeddings, texts_to_embed
+        path.write_text(rest, encoding='utf-8')
 
-def load_tags(filepath):
-    """
-    Loads tags and their descriptions from a file.
-    Expects format: tag_name<SEPARATOR>Description
-    Returns a dictionary mapping tag_name -> description.
-    """
-    tags_dict = {}
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            for i, line in enumerate(f):
-                line = line.strip()
-                if not line or line.startswith('#'): # Skip empty lines and comments
-                    continue
-                if TAG_DESC_SEPARATOR in line:
-                    parts = line.split(TAG_DESC_SEPARATOR, 1)
-                    tag_name = parts[0].strip()
-                    description = parts[1].strip()
-                    if not tag_name:
-                         print(f"Warning: Skipping line {i+1} in tags file due to missing tag name before separator.")
-                         continue
-                    if not description:
-                         print(f"Warning: Tag '{tag_name}' on line {i+1} has no description after separator. Using tag name as description.")
-                         description = tag_name # Fallback
-                    tags_dict[tag_name] = description
-                else:
-                    # No separator found, treat the whole line as the tag name and description
-                    tag_name = line
-                    print(f"Warning: No separator '{TAG_DESC_SEPARATOR}' found on line {i+1}. Using '{tag_name}' as both tag and description.")
-                    tags_dict[tag_name] = tag_name
-
-        if not tags_dict:
-            print(f"Warning: No valid tags found in {filepath}")
-            return {}
-        print(f"Loaded {len(tags_dict)} tags with descriptions from {filepath}")
-        return tags_dict
-    except FileNotFoundError:
-        print(f"Error: Tags file not found at {filepath}")
-        return None
-    except Exception as e:
-        print(f"Error reading tags file {filepath}: {e}")
-        return None
-
-def add_tag_to_markdown(filepath, tag_to_add):
-    """
-    Adds a tag to the YAML front matter of a markdown file.
-    Creates front matter if it doesn't exist.
-    Ensures the tag is added uniquely to the 'tags' list.
-    Returns True if the file was modified, False otherwise.
-    """
-    try:
-        content = filepath.read_text(encoding='utf-8')
-        # Use regex to properly split front matter (handles different line endings)
-        pattern = re.compile(r'^(' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*?)(\r?\n' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*)', re.DOTALL | re.MULTILINE)
-        match = pattern.match(content)
-
-        front_matter_dict = {}
-        main_content = content
-        modified = False # Flag to track if file needs writing
-
-        if match:
-            # Existing front matter found
-            yaml_content = match.group(2)
-            main_content = match.group(4) # Content after the second '---'
-            try:
-                front_matter_dict = yaml.safe_load(StringIO(yaml_content)) # Use StringIO to load from string
-                if front_matter_dict is None: # Handle empty front matter
-                     front_matter_dict = {}
-            except yaml.YAMLError as e:
-                print(f"Warning: Could not parse existing YAML front matter in {filepath.name}. Skipping tag addition. Error: {e}")
-                return False # Indicate failure/skip
-        else:
-            # No front matter found, main_content is the whole file content
-            pass # Keep front_matter_dict empty, will create if needed
-
-        # Ensure 'tags' key exists and is a list
-        if TAGS_KEY not in front_matter_dict:
-            front_matter_dict[TAGS_KEY] = []
-            modified = True # Need to create the key
-        # Check if it exists but is None, treat as empty list
-        elif front_matter_dict[TAGS_KEY] is None:
-             front_matter_dict[TAGS_KEY] = []
-             modified = True # Value changed from None to []
-        elif not isinstance(front_matter_dict[TAGS_KEY], list):
-            # If tags exists but isn't a list, convert it (might lose original value)
-            print(f"Warning: Existing '{TAGS_KEY}' in {filepath.name} is not a list. Converting to list.")
-            existing_value = front_matter_dict[TAGS_KEY]
-            if isinstance(existing_value, (str, int, float)): # Handle common scalar types
-                 front_matter_dict[TAGS_KEY] = [str(existing_value)]
-            else:
-                 front_matter_dict[TAGS_KEY] = [] # Overwrite if complex type
-            modified = True # Type changed
-
-        # Add the new tag if it's not already present
-        # Ensure tag_to_add is a string
-        tag_to_add_str = str(tag_to_add)
-        if tag_to_add_str not in front_matter_dict[TAGS_KEY]:
-            front_matter_dict[TAGS_KEY].append(tag_to_add_str)
-            # Sort tags only if they are strings, handle potential mixed types gracefully
-            try:
-                front_matter_dict[TAGS_KEY].sort()
-            except TypeError:
-                 print(f"Warning: Could not sort tags in {filepath.name} due to mixed types.")
-            modified = True
-        else:
-            # Tag already present, no modification needed for *this* operation
-            # Return False as this function call didn't change the file
-            return False
-
-        # Write back to file only if modifications were made
-        if modified:
-            try:
-                # Dump the updated front matter dictionary back to YAML string
-                updated_yaml = yaml.dump(front_matter_dict, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                # Construct the new full content
-                new_content = f"{YAML_FRONT_MATTER_SEP}\n{updated_yaml}{YAML_FRONT_MATTER_SEP}\n{main_content}"
-                filepath.write_text(new_content, encoding='utf-8')
-                return True # Indicate success
-
-            except yaml.YAMLError as e:
-                 print(f"Error: Could not dump updated YAML for {filepath.name}. Error: {e}")
-                 return False
-            except Exception as e:
-                 print(f"Error writing updated file {filepath.name}: {e}")
-                 return False
-        else:
-             # Should not be reached if logic above is correct, but safe fallback
-             return False
-
-    except Exception as e:
-        print(f"Error processing file {filepath}: {e}")
-        return False
-
-def remove_all_tags_from_markdown(filepath):
-    """
-    Removes the 'tags' key entirely from the YAML front matter.
-    If the front matter becomes empty after removal, the entire block is removed.
-    Returns True if the file was modified, False otherwise.
-    """
-    try:
-        content = filepath.read_text(encoding='utf-8')
-        # Use regex to properly split front matter
-        pattern = re.compile(r'^(' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*?)(\r?\n' + YAML_FRONT_MATTER_SEP + r'\r?\n)(.*)', re.DOTALL | re.MULTILINE)
-        match = pattern.match(content)
-
-        if not match:
-            # No front matter found, nothing to remove
-            return False
-
-        yaml_content = match.group(2)
-        main_content = match.group(4)
-        front_matter_dict = {}
-        modified = False
-
-        try:
-            front_matter_dict = yaml.safe_load(StringIO(yaml_content))
-            if front_matter_dict is None:
-                front_matter_dict = {} # Treat empty front matter as empty dict
-        except yaml.YAMLError as e:
-            print(f"Warning: Could not parse existing YAML front matter in {filepath.name}. Skipping tag removal. Error: {e}")
-            return False
-
-        # Check if the tags key exists and remove it
-        if TAGS_KEY in front_matter_dict:
-            del front_matter_dict[TAGS_KEY]
-            modified = True
-        else:
-            # Tags key doesn't exist, no modification needed
-            return False
-
-        # Write back to file only if the tags key was actually removed
-        if modified:
-            try:
-                if not front_matter_dict: # Check if dict is empty after removing tags
-                    # If front matter is now empty, just write back the main content
-                    new_content = main_content
-                else:
-                    # Dump the updated (non-empty) front matter dictionary back to YAML string
-                    updated_yaml = yaml.dump(front_matter_dict, default_flow_style=False, allow_unicode=True, sort_keys=False)
-                    # Construct the new full content
-                    new_content = f"{YAML_FRONT_MATTER_SEP}\n{updated_yaml}{YAML_FRONT_MATTER_SEP}\n{main_content}"
-
-                filepath.write_text(new_content, encoding='utf-8')
-                return True # Indicate success
-
-            except yaml.YAMLError as e:
-                 print(f"Error: Could not dump updated YAML for {filepath.name} during tag removal. Error: {e}")
-                 return False
-            except Exception as e:
-                 print(f"Error writing updated file {filepath.name} during tag removal: {e}")
-                 return False
-        else:
-            # Should not be reached if logic above is correct
-            return False
-
-    except Exception as e:
-        print(f"Error processing file {filepath} for tag removal: {e}")
-        return False
+    print(f"Removed tags in {path.name}")
+    return True
 
 
-# --- Main Execution ---
+
+def add_tag(path, tag):
+    text = path.read_text(encoding='utf-8')
+    match = re.match(rf"\A{YAML_SEP}\s*\r?\n(.*?)(?:\r?\n{YAML_SEP}\s*\r?\n)([\s\S]*)", text, flags=re.DOTALL)
+    if match:
+        fm_content, rest = match.group(1), match.group(2)
+        data = yaml.safe_load(fm_content) or {}
+    else:
+        data = {}
+        rest = text
+    tags_list = data.get(TAGS_KEY) or []
+    if not isinstance(tags_list, list):
+        tags_list = [str(tags_list)]
+    if tag not in tags_list:
+        tags_list.append(tag)
+        data[TAGS_KEY] = sorted(tags_list)
+        write_front_matter(path, data, rest)
+        return True
+    return False
+
+# --- Main ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze markdown files and assign the best fitting tag from a list based on semantic similarity, or remove all tags.")
-    parser.add_argument("vault_path", help="Path to the Obsidian vault directory.")
-    # Tagging options (mutually exclusive with --remove-tags)
-    parser.add_argument("--tags-file", help=f"Path to a text file containing possible tags (Format: tag_name{TAG_DESC_SEPARATOR}Description). Required unless --remove-tags is used.")
-    parser.add_argument("--apply-tags", action="store_true", help="Modify markdown files to insert the best-fit tag into YAML front matter. Use with --tags-file.")
-    # Removal option (mutually exclusive with tagging)
-    parser.add_argument("--remove-tags", action="store_true", help="Remove the 'tags' key from YAML front matter in all processed files. Overrides tagging options.")
-    # General options
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for embedding generation.")
-    parser.add_argument("--force-embeddings", action="store_true", help="Force regeneration of document embeddings, ignoring cache (only relevant for tagging).")
-    parser.add_argument("--model", type=str, default="all-MiniLM-L6-v2", help="Sentence Transformer model name (only relevant for tagging).")
+    p = argparse.ArgumentParser()
+    p.add_argument('vault_path')
+    p.add_argument('--tags-file')
+    p.add_argument('--apply-tags', action='store_true')
+    p.add_argument('--remove-tags', action='store_true')
+    p.add_argument('--batch-size', type=int, default=32)
+    p.add_argument('--force-embeddings', action='store_true')
+    p.add_argument('--model', default='all-MiniLM-L6-v2')
+    args = p.parse_args()
 
-    args = parser.parse_args()
-
-    # --- Input Validation ---
-    if not os.path.isdir(args.vault_path):
-        print(f"Error: Vault path '{args.vault_path}' not found or is not a directory.")
-        return
-
-    # --- Mode Selection: Remove Tags or Add Tags ---
-
+    files = find_markdown_files(args.vault_path)
     if args.remove_tags:
-        # --- Remove Tags Mode ---
-        print("--- Running in Remove Tags Mode ---")
-        all_files = find_markdown_files(args.vault_path)
-        if not all_files:
-            print("No markdown files found. Exiting.")
-            return
+        removed = 0
+        for f in tqdm(files, desc='Removing tags'):
+            if remove_tags(f):
+                removed += 1
+        print(f"Removed tags from {removed}/{len(files)} files.")
+        return
 
-        files_modified_count = 0
-        print("Removing tags key from YAML front matter...")
-        for file_path in tqdm(all_files, desc="Removing tags"):
-            success = remove_all_tags_from_markdown(file_path)
-            if success:
-                files_modified_count += 1
-
-        print("\n--- Tag Removal Summary ---")
-        print(f"Files scanned: {len(all_files)}")
-        print(f"Files modified (tags key removed): {files_modified_count}")
-        print("---------------------------")
-        print("Script finished.")
-        return # Exit after removal
-
-    # --- Add Tags Mode (Default if --remove-tags is not specified) ---
-    print("--- Running in Add Tags Mode ---")
-    # Validate arguments for this mode
     if not args.tags_file:
-        parser.error("--tags-file is required when not using --remove-tags.")
-        return # Redundant due to parser.error, but good practice
-    if not os.path.isfile(args.tags_file):
-        print(f"Error: Tags file '{args.tags_file}' not found.")
+        print("Error: --tags-file required")
         return
+    tags = load_tags(args.tags_file)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = SentenceTransformer(args.model, device=device)
 
-    # --- Setup ---
-    if torch.cuda.is_available():
-        device = 'cuda'
-        print(f"CUDA available. Using GPU: {torch.cuda.get_device_name(0)}")
-    else:
-        device = 'cpu'
-        print("CUDA not available. Using CPU.")
-
-    cache_dir_path = os.path.join(args.vault_path, EMBEDDING_CACHE_DIR)
-    os.makedirs(cache_dir_path, exist_ok=True)
-
-    # --- Core Tagging Logic ---
-    # 1. Load Tags (Now expects dictionary: tag_name -> description)
-    tags_data = load_tags(args.tags_file)
-    if tags_data is None or not tags_data:
-        print("Could not load tags or tags file is empty. Exiting.")
-        return
-    # Prepare lists needed for embedding and mapping back
-    tag_names = list(tags_data.keys())
-    tag_descriptions = list(tags_data.values())
-
-
-    # 2. Find Files
-    all_files = find_markdown_files(args.vault_path)
-    if not all_files:
-        print("No markdown files found. Exiting.")
-        return
-
-    # 3. Load Model
-    print(f"Loading sentence transformer model: {args.model}...")
-    try:
-        model_instance = SentenceTransformer(args.model, device=device)
-    except Exception as e:
-        print(f"Error loading model '{args.model}'. Ensure it's valid.")
-        print(f"Details: {e}")
-        return
-    print("Model loaded successfully.")
-
-    # 4. Generate Document Embeddings (using cache)
-    doc_embeddings, valid_doc_paths = generate_embeddings(
-        all_files, model_instance, args.model, args.batch_size, device, cache_dir_path, args.force_embeddings, is_document=True
+    emb_docs, docs = embed_documents(
+        files, model, args.model, args.batch_size, device,
+        args.vault_path, args.force_embeddings
     )
-    if len(valid_doc_paths) == 0:
-        print("Stopping due to lack of valid document embeddings.")
-        return
-    if len(valid_doc_paths) != len(all_files):
-         print(f"Warning: Processed {len(valid_doc_paths)} files out of {len(all_files)} due to errors or skips.")
+    emb_tags = embed_texts(list(tags.values()), model, args.batch_size, device)
 
-    # 5. Generate Tag Embeddings (Embed descriptions, not names)
-    tag_embeddings, _ = generate_embeddings( # We don't need the returned descriptions here
-        tag_descriptions, model_instance, args.model, args.batch_size, device, is_document=False
-    )
-    if tag_embeddings.shape[0] == 0: # Check if any tag embeddings were generated
-        print("Stopping due to lack of valid tag embeddings.")
-        return
+    sims = cosine_similarity(emb_docs, emb_tags)
+    best = sims.argmax(axis=1)
+    mapping = {docs[i]: list(tags.keys())[idx] for i, idx in enumerate(best)}
 
-    # 6. Calculate Document-Tag Similarities
-    print("Calculating document-tag similarity matrix...")
-    # Ensure doc_embeddings is not empty before calculating similarity
-    if doc_embeddings.shape[0] == 0:
-         print("Error: No document embeddings available to calculate similarity.")
-         return
-
-    similarity_matrix = cosine_similarity(doc_embeddings, tag_embeddings)
-    print(f"Similarity matrix shape: {similarity_matrix.shape}") # Should be (num_docs x num_tags)
-
-    # 7. Find Best Tag for Each Document
-    best_tag_indices = np.argmax(similarity_matrix, axis=1) # Find index of max similarity for each row (doc)
-    # Map the index back to the original tag name using the ordered list tag_names
-    doc_to_best_tag_name = {doc_path: tag_names[tag_index] for doc_path, tag_index in zip(valid_doc_paths, best_tag_indices)}
-
-    # 8. Apply Tags (if requested)
     if args.apply_tags:
-        print("Applying best fit tags to markdown files...")
-        files_modified_count = 0
-        # files_error_count = 0 # Optional: track errors separately
+        applied = 0
+        for doc, tag in tqdm(mapping.items(), desc='Applying tags'):
+            if add_tag(doc, tag):
+                applied += 1
+        print(f"Applied tags to {applied}/{len(mapping)} files.")
 
-        for file_path, best_tag_name in tqdm(doc_to_best_tag_name.items(), desc="Applying tags"):
-            # Pass file_path which is already a Path object
-            success = add_tag_to_markdown(file_path, best_tag_name) # Add the tag NAME
-            if success:
-                files_modified_count += 1
-            # else: # Optional error tracking
-            #     files_error_count += 1
-
-        print("\n--- Tagging Summary ---")
-        print(f"Files processed: {len(valid_doc_paths)}")
-        print(f"Files modified (tag added/updated): {files_modified_count}")
-        # if files_error_count > 0: print(f"Errors encountered during modification: {files_error_count}")
-        print("------------------------")
-
-    else:
-        # --- Dry Run Summary for Tagging ---
-        print("\n--- Dry Run Summary (Add Tags Mode) ---")
-        print(f"Files processed: {len(valid_doc_paths)}")
-        print(f"Tags considered: {len(tag_names)}")
-        print("Best tag mapping found (based on description similarity, applying tag name):")
-        count = 0
-        for doc_path, best_tag_name in doc_to_best_tag_name.items():
-            if count < 10: # Print for first 10 files
-                print(f"  - {doc_path.name} -> #{best_tag_name}")
-                count +=1
-            elif count == 10:
-                 print("  - ... (and potentially many more)")
-                 count += 1 # Prevent printing ellipsis repeatedly
-        print("\nRun with --apply-tags to modify files.")
-        print("---------------------------------------")
-
-    print("Script finished.")
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
