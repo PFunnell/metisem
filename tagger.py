@@ -149,22 +149,61 @@ def remove_tags(path):
 
 def add_tag(path, tag):
     text = path.read_text(encoding='utf-8')
-    match = re.match(rf"\A{YAML_SEP}\s*\r?\n(.*?)(?:\r?\n{YAML_SEP}\s*\r?\n)([\s\S]*)", text, flags=re.DOTALL)
-    if match:
-        fm_content, rest = match.group(1), match.group(2)
-        data = yaml.safe_load(fm_content) or {}
+    # Split off the front‑matter block (if any)
+    m = re.match(
+        r'^\s*---\s*\r?\n'      # opening ---
+        r'([\s\S]*?)'           # capture everything inside
+        r'\r?\n---\s*\r?\n'     # closing ---
+        r'([\s\S]*)',           # rest of file
+        text,
+        flags=re.MULTILINE
+    )
+    if m:
+        fm_block, rest = m.group(1), m.group(2)
+        lines = fm_block.splitlines()
     else:
-        data = {}
+        # No front matter yet
+        lines = []
         rest = text
-    tags_list = data.get(TAGS_KEY) or []
-    if not isinstance(tags_list, list):
-        tags_list = [str(tags_list)]
-    if tag not in tags_list:
-        tags_list.append(tag)
-        data[TAGS_KEY] = sorted(tags_list)
-        write_front_matter(path, data, rest)
-        return True
-    return False
+
+    new_lines = []
+    saw_tags = False
+    inserted = False
+
+    for line in lines:
+        new_lines.append(line)
+        if re.match(rf'^\s*{TAGS_KEY}\s*:\s*$', line):
+            saw_tags = True
+            # Insert our new tag immediately under 'tags:'
+            new_lines.append(f'- {tag}')
+            inserted = True
+        elif saw_tags:
+            # we already inserted, now copy existing list items
+            if re.match(r'^\s*-\s+\S+', line):
+                # skip duplicates
+                if line.strip() == f'- {tag}':
+                    continue
+                new_lines.append(line)
+            else:
+                saw_tags = False
+
+    if not inserted:
+        # No existing tags key: tack it on at the end of the front matter
+        new_lines.append(f'{TAGS_KEY}:')
+        new_lines.append(f'- {tag}')
+
+    # Rebuild file
+    if lines:
+        new_fm = '\n'.join(new_lines)
+        new_text = f'---\n{new_fm}\n---\n{rest.lstrip()}'
+    else:
+        # Create a front matter block from scratch
+        new_text = f'---\n{TAGS_KEY}:\n- {tag}\n---\n{rest}'
+
+    path.write_text(new_text, encoding='utf-8')
+    print(f'Applied tag in {path.name}')
+    return True
+
 
 # --- Main ---
 
