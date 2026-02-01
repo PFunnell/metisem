@@ -24,13 +24,45 @@ Both tools use [Sentence Transformers](https://www.sbert.net/) to identify seman
 - Inserts the best tag into YAML front matter (`tags:`).
 - Optionally supports removing all tags from notes.
 
-## 🛠 Requirements
+## 🛠 Installation
 
-- Python 3.8+
-- Dependencies (install via pip):
+### Prerequisites
 
+- Python 3.8 or higher
+- pip package manager
+- (Optional) CUDA-capable GPU for faster embedding generation
+
+### Install from Source
+
+1. Clone the repository:
 ```bash
-pip install sentence-transformers scikit-learn pyyaml tqdm
+git clone https://github.com/PFunnell/metisem.git
+cd metisem
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+3. Verify installation:
+```bash
+python main.py --help
+python tagger.py --help
+```
+
+### For Summarizer
+
+The summarizer requires [Ollama](https://ollama.ai/) running locally:
+
+1. Install Ollama from https://ollama.ai/
+2. Start the Ollama service:
+```bash
+ollama serve
+```
+3. Pull a model (e.g., mistral):
+```bash
+ollama pull mistral
 ```
 
 ## 🚀 Usage
@@ -79,11 +111,70 @@ AI_and_automation::Discussions about artificial intelligence, machine learning..
 
 Embeddings are stored in `.obsidian_linker_cache/` using a model-specific cache file. This significantly speeds up repeated runs.
 
-## ⚠️ Notes
+## ⚠️ Important Notes
 
-- Markdown files must use UTF-8 encoding.
-- Wikilinks and tags are only inserted if applicable.
-- Make backups before running `--apply-links` or `--apply-tags`.
+- **Always backup your vault before running with `--apply-links`, `--apply-tags`, or `--apply-summaries`**
+- Markdown files must use UTF-8 encoding
+- The first run will be slow as it generates embeddings; subsequent runs use cached embeddings
+- GPU acceleration (CUDA) is automatically used if available
+
+## 🛠 Development Setup
+
+### Setting Up Development Environment
+
+1. Fork and clone the repository
+2. Create a virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+4. Install development tools (optional):
+```bash
+pip install mypy pre-commit
+pre-commit install
+```
+
+### Running Tests
+
+Currently, this project uses manual verification against test vaults. Automated testing is planned for future releases.
+
+### Code Quality
+
+- Type hints are used throughout the codebase
+- Run `mypy` for type checking:
+```bash
+mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports
+```
+
+## 🐛 Troubleshooting
+
+### "Cannot connect to Ollama" error
+- Ensure Ollama is running: `ollama serve`
+- Check Ollama is listening on localhost:11434
+- Set custom host: `OLLAMA_HOST=custom:port python summariser_ollama.py ...`
+
+### Slow embedding generation
+- First run always generates embeddings from scratch
+- Use `--force-embeddings` only when necessary
+- Consider using a smaller model for faster processing
+- GPU acceleration requires CUDA-compatible GPU and drivers
+
+### "Module not found" errors
+- Ensure all dependencies are installed: `pip install -r requirements.txt`
+- Check you're using Python 3.8 or higher: `python --version`
+
+### Out of memory errors
+- Reduce `--batch-size` (default: 32)
+- Use a smaller transformer model
+- Process fewer files at once with `--max-files`
+
+### Cache invalidation
+- Delete `.obsidian_linker_cache/` to rebuild all embeddings
+- Use `--force-embeddings` to regenerate on next run
 
 ## 📸 Example Screenshot
 
