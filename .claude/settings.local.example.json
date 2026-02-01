@@ -1,0 +1,13 @@
+{
+  "//": "User-specific settings - copy to settings.local.json",
+  "//note": "This file extends settings.json; it does not replace it",
+  "env": {
+    "CLAUDE_CODE_SHELL": "powershell"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(C:/path/to/your/python.exe:*)",
+      "Skill(ui_smoke)"
+    ]
+  }
+}

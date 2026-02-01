@@ -1,0 +1,104 @@
+# Claude Code RPI Plus
+# Copy this file to portable_config.local.yaml and customize for your project.
+#
+# This is the ONLY file you need to edit after installing the pack.
+# All commands read their paths and settings from this configuration.
+
+# ============================================================================
+# PROJECT IDENTIFICATION
+# ============================================================================
+
+project:
+  name: "MyProject"                    # Shown in statusline, plan headers
+
+# ============================================================================
+# PATHS AND TOOLS
+# ============================================================================
+
+paths:
+  # Python executable - use full path for venv/conda, or just "python"
+  # Examples:
+  #   python: "python"
+  #   python: "/usr/local/bin/python3"
+  #   python: "C:/Users/you/miniconda3/envs/myenv/python.exe"
+  python: "python"
+
+# ============================================================================
+# TESTING
+# ============================================================================
+
+tests:
+  # Primary test command (used by /phase_complete)
+  command: "pytest tests/ -q"
+
+  # Optional: Different command for CI environments
+  # ci_command: "pytest tests/ --tb=short --strict-markers"
+
+# ============================================================================
+# ARTEFACT VALIDATION
+# ============================================================================
+
+validator:
+  # Command to validate artefact locations
+  command: "python scripts/validate-artefacts.py"
+
+  # Set false to skip validation (not recommended)
+  enabled: true
+
+# ============================================================================
+# ARTEFACT DIRECTORIES
+# ============================================================================
+# Where workflow artefacts are stored.
+# Defaults work for most projects; customize if needed.
+
+artefacts:
+  plans_dir: "docs/plans/"
+  research_dir: "docs/research/"
+  state_dir: "docs/state/"
+  verification_dir: "docs/verification/"
+
+# ============================================================================
+# UI SMOKE TESTING (OPTIONAL)
+# ============================================================================
+# Enable if your project has a web frontend that should be verified after changes.
+# Requires: Claude Code started with --chrome flag
+# Skip if: CLI tool, library, backend-only service
+
+ui:
+  # Set to true to enable /ui_smoke command
+  enabled: false
+
+  # UI source directory (for reference)
+  root: "ui/"
+
+  # Dev server URL for smoke tests
+  url: "http://localhost:3000"
+
+  # Command to start UI dev server
+  dev_command: "npm run dev"
+
+# ============================================================================
+# WORKFLOW BEHAVIOR
+# ============================================================================
+# Fine-tune how workflow commands behave.
+# All settings default to true if not specified.
+
+workflow:
+  phase_gate:
+    # Show unified validation table at phase gate
+    show_validation_report: true
+
+    # Remind about transcript generation
+    remind_transcript: true
+
+  session:
+    # Prompt for /resume_project on session start if RESUME.md exists
+    auto_detect_resume: true
+
+  gitsync:
+    # Check CI status before push (requires gh CLI)
+    check_ci_status: true
+
+  research:
+    # Update RESUME.md after research completes
+    link_to_resume: true

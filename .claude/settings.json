@@ -1,0 +1,48 @@
+{
+  "statusLine": {
+    "type": "command",
+    "command": "python .claude/statusline.py",
+    "padding": 0
+  },
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python -m pip:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(pytest:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git mv:*)",
+      "Bash(git stash:*)",
+      "Bash(git fetch:*)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git branch -v)",
+      "Bash(git branch --list:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git switch -c:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(ls:*)",
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(curl:*)",
+      "Skill(gitsync)",
+      "Skill(create_plan)",
+      "Skill(implement_plan)",
+      "Skill(research_codebase)",
+      "Skill(phase_complete)",
+      "Skill(resume_project)"
+    ]
+  }
+}
