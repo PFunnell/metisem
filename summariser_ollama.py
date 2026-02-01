@@ -1,25 +1,35 @@
 #!/usr/bin/env python
+"""Summarizer for Obsidian markdown vaults using Ollama local LLM.
+
+This module generates summaries for markdown files using a local Ollama instance.
+Summaries are prepended to files as HTML-comment-wrapped blocks.
+"""
 import os
 import glob
 import re
 import argparse
+import logging
 from pathlib import Path
+from typing import List, Optional
 import requests
 from tqdm import tqdm
 
+logger = logging.getLogger(__name__)
+
 SUMMARY_START = "<!-- AUTO-GENERATED SUMMARY START -->"
 SUMMARY_END = "<!-- AUTO-GENERATED SUMMARY END -->"
+OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'localhost:11434')
 
-def find_markdown_files(vault_path, max_files):
+def find_markdown_files(vault_path: str, max_files: Optional[int]) -> List[Path]:
     """Find markdown files in vault, optionally limited to max_files."""
     all_md = glob.glob(os.path.join(vault_path, '**', '*.md'), recursive=True)
     files = [Path(p) for p in all_md]
     if max_files:
-        print(f"Limiting to {max_files} files out of {len(files)} total files found")
+        logger.info(f"Limiting to {max_files} files out of {len(files)} total files found")
         return files[:max_files]
     return files
 
-def remove_summaries(filepath):
+def remove_summaries(filepath: Path) -> bool:
     """Strip out any existing summary block from the top of the file."""
     try:
         txt = filepath.read_text(encoding='utf-8')
@@ -32,10 +42,10 @@ def remove_summaries(filepath):
             filepath.write_text(new_txt, encoding='utf-8')
         return count > 0
     except Exception as e:
-        print(f"Error removing summaries from {filepath}: {e}")
+        logger.error(f"Error removing summaries from {filepath}: {e}")
         return False
 
-def insert_summary(filepath, summary):
+def insert_summary(filepath: Path, summary: str) -> None:
     """Prepend the generated summary block above the rest of the file."""
     try:
         txt = filepath.read_text(encoding='utf-8')
@@ -44,11 +54,11 @@ def insert_summary(filepath, summary):
         # Verify summary was written
         new_txt = filepath.read_text(encoding='utf-8')
         if SUMMARY_START not in new_txt:
-            print(f"Warning: Summary may not have been written to {filepath}")
+            logger.warning(f"Warning: Summary may not have been written to {filepath}")
     except Exception as e:
-        print(f"Error inserting summary into {filepath}: {e}")
+        logger.error(f"Error inserting summary into {filepath}: {e}")
 
-def summarize_text(text, model_name, max_length):
+def summarize_text(text: str, model_name: str, max_length: int) -> str:
     """Generate a summary using Ollama's API."""
     try:
         # Truncate input text if too long (approximate token count)
@@ -56,7 +66,7 @@ def summarize_text(text, model_name, max_length):
         words = text.split()
         max_words = 6144  # approximately 6K tokens
         if len(words) > max_words:
-            print(f"Warning: Input text truncated to ~{max_words} tokens.")
+            logger.warning(f"Input text truncated to ~{max_words} tokens.")
             text = ' '.join(words[:max_words])
 
         # Enhanced prompt for better summaries
@@ -81,7 +91,7 @@ def summarize_text(text, model_name, max_length):
 
         # Call Ollama API with adjusted parameters
         response = requests.post(
-            'http://localhost:11434/api/generate',
+            f'http://{OLLAMA_HOST}/api/generate',
             json={
                 'model': model_name,
                 'prompt': prompt,
@@ -98,16 +108,16 @@ def summarize_text(text, model_name, max_length):
         )
         
         if response.status_code != 200:
-            print(f"Error from Ollama API: {response.text}")
+            logger.error(f"Error from Ollama API: {response.text}")
             return ""
 
         return response.json()['response'].strip()
 
     except Exception as e:
-        print(f"Error during summarization: {e}")
+        logger.error(f"Error during summarization: {e}")
         return ""
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(description="Batch-summarise Markdown files using Ollama")
     p.add_argument("vault_path", help="Obsidian vault path")
     p.add_argument("--model", default="mistral", help="Ollama model name (default: mistral)")
@@ -115,61 +125,65 @@ def main():
     p.add_argument("--max-files", type=int, default=None, help="Max files to process (default: all files)")
     p.add_argument("--delete-summaries", action="store_true", help="Remove existing summaries")
     p.add_argument("--apply-summaries", action="store_true", help="Insert new summaries")
-    p.add_argument("--verbose", action="store_true", help="Show detailed progress")
+    p.add_argument("--verbose", action="store_true", help="Enable verbose logging (DEBUG level)")
     args = p.parse_args()
+
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s'
+    )
 
     # Verify Ollama is running
     try:
-        requests.get('http://localhost:11434/api/version')
+        requests.get(f'http://{OLLAMA_HOST}/api/version')
     except requests.exceptions.ConnectionError:
-        print("Error: Cannot connect to Ollama. Is it running?")
-        print("Start Ollama with: ollama serve")
+        logger.error(f"Cannot connect to Ollama at {OLLAMA_HOST}. Is it running?")
+        logger.error("Start Ollama with: ollama serve")
         return
 
     files = find_markdown_files(args.vault_path, args.max_files)
     if not files:
-        print("No Markdown files found. Ensure the vault path is correct and contains .md files.")
+        logger.error("No Markdown files found. Ensure the vault path is correct and contains .md files.")
         return
 
     total_files = len(files)
-    print(f"Found {total_files} markdown files in {args.vault_path}")
+    logger.info(f"Found {total_files} markdown files in {args.vault_path}")
 
     if args.delete_summaries:
-        print("Removing old summaries...")
+        logger.info("Removing old summaries...")
         removed = 0
         for f in tqdm(files, desc="Clearing"):
             if remove_summaries(f):
                 removed += 1
-        print(f"Removed summaries from {removed} files")
+        logger.info(f"Removed summaries from {removed} files")
         if not args.apply_summaries:
             return
 
     if args.apply_summaries:
-        print("Generating and applying summaries...")
+        logger.info("Generating and applying summaries...")
         successful = 0
         for f in tqdm(files, desc="Summarising"):
             try:
-                if args.verbose:
-                    print(f"\nProcessing: {f}")
+                logger.debug(f"Processing: {f}")
                 text = f.read_text(encoding='utf-8')
                 if len(text.strip()) == 0:
-                    if args.verbose:
-                        print(f"Skipping empty file: {f}")
+                    logger.debug(f"Skipping empty file: {f}")
                     continue
-                
+
                 summary = summarize_text(text, args.model, args.max_summary_length)
                 if summary:
                     insert_summary(f, summary)
                     successful += 1
-                    if args.verbose:
-                        print(f"Added summary to: {f}")
-                        print(f"Summary: {summary[:100]}...")
+                    logger.debug(f"Added summary to: {f}")
+                    logger.debug(f"Summary: {summary[:100]}...")
             except Exception as e:
-                print(f"Error processing {f}: {e}")
+                logger.error(f"Error processing {f}: {e}")
 
-        print(f"\nSummary Generation Complete:")
-        print(f"- Successfully processed: {successful}/{total_files} files")
-        print(f"- Failed/Skipped: {total_files - successful} files")
+        logger.info(f"\nSummary Generation Complete:")
+        logger.info(f"- Successfully processed: {successful}/{total_files} files")
+        logger.info(f"- Failed/Skipped: {total_files - successful} files")
 
 if __name__ == '__main__':
     main()
