@@ -1,14 +1,23 @@
+"""Auto-tagger for Obsidian markdown vaults.
+
+This module automatically tags notes based on semantic similarity between note content
+and tag descriptions. Tags are added to YAML front matter.
+"""
 import os
 import re
 import argparse
 import hashlib
 from pathlib import Path
+import logging
+from typing import List, Dict, Tuple
 import yaml
 import numpy as np
 import torch
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+
+logger = logging.getLogger(__name__)
 
 # --- Constants ---
 CACHE_DIR = ".obsidian_linker_cache"
@@ -18,31 +27,36 @@ TAG_DESC_SEP = '::'
 
 # --- File Utilities ---
 
-def find_markdown_files(vault):
+def find_markdown_files(vault: str) -> List[Path]:
+    """Find all markdown files in vault recursively."""
     return list(Path(vault).rglob('*.md'))
 
 
-def read_and_hash(path):
+def read_and_hash(path: Path) -> Tuple[str, str]:
+    """Read file and compute SHA256 hash. Returns (content, hash)."""
     text = path.read_text(encoding='utf-8')
     h = hashlib.sha256(text.encode('utf-8')).hexdigest()
     return text, h
 
 # --- Caching ---
 
-def cache_filepath(vault, model_name):
+def cache_filepath(vault: str, model_name: str) -> Path:
+    """Generate cache file path for embeddings based on vault and model name."""
     vault_name = Path(vault).resolve().name.replace('/', '_')
     safe_name = model_name.replace('/', '_')
     return Path(vault) / CACHE_DIR / f'embeddings_{vault_name}_{safe_name}.npz'
 
 
-def load_cache(cp):
+def load_cache(cp: Path) -> Dict[Path, Dict[str, any]]:
+    """Load cached embeddings from npz file. Returns empty dict if not found."""
     if cp.exists():
         data = np.load(cp, allow_pickle=True)
         return {Path(p): {'hash': h, 'emb': e} for p, h, e in zip(data['paths'], data['hashes'], data['embs'])}
     return {}
 
 
-def save_cache(cp, mapping):
+def save_cache(cp: Path, mapping: Dict[Path, Dict[str, any]]) -> None:
+    """Save embeddings to cache file in npz format."""
     cp.parent.mkdir(exist_ok=True)
     paths = np.array([str(p) for p in mapping])
     hashes = np.array([mapping[p]['hash'] for p in mapping])
@@ -51,11 +65,13 @@ def save_cache(cp, mapping):
 
 # --- Embedding ---
 
-def embed_texts(texts, model, batch, device):
+def embed_texts(texts: List[str], model, batch: int, device: str) -> np.ndarray:
+    """Generate embeddings for a list of texts using sentence transformer model."""
     return model.encode(texts, batch_size=batch, show_progress_bar=True, device=device, convert_to_numpy=True)
 
 
-def embed_documents(files, model, model_name, batch, device, vault, force):
+def embed_documents(files: List[Path], model, model_name: str, batch: int, device: str, vault: str, force: bool) -> Tuple[np.ndarray, List[Path]]:
+    """Generate or load cached embeddings for markdown files. Returns (embeddings_array, file_paths)."""
     cp = cache_filepath(vault, model_name)
     cached = {} if force else load_cache(cp)
     to_process = []
@@ -78,7 +94,8 @@ def embed_documents(files, model, model_name, batch, device, vault, force):
 
 # --- Tag Loading ---
 
-def load_tags(file):
+def load_tags(file: str) -> Dict[str, str]:
+    """Load tag definitions from file. Format: tag_name::description per line."""
     tags = {}
     for line in Path(file).read_text(encoding='utf-8').splitlines():
         line = line.strip()
@@ -94,13 +111,15 @@ def load_tags(file):
 
 # --- Front Matter Manipulation ---
 
-def write_front_matter(path, data, rest):
+def write_front_matter(path: Path, data: Dict, rest: str) -> None:
+    """Write YAML front matter block to file with given data and remaining content."""
     fm = yaml.safe_dump(data, sort_keys=False).strip()
     new = f"{YAML_SEP}\n{fm}\n{YAML_SEP}\n{rest.lstrip()}"
     path.write_text(new, encoding='utf-8')
 
 
-def remove_tags(path):
+def remove_tags(path: Path) -> bool:
+    """Remove tags section from YAML front matter. Returns True if tags were removed."""
     text = path.read_text(encoding='utf-8')
     # Match the YAML front‑matter block (start and end “---”)
     fm_match = re.match(
@@ -142,12 +161,13 @@ def remove_tags(path):
     else:
         path.write_text(rest, encoding='utf-8')
 
-    print(f"Removed tags in {path.name}")
+    logger.debug(f"Removed tags in {path.name}")
     return True
 
 
 
-def add_tag(path, tag):
+def add_tag(path: Path, tag: str) -> bool:
+    """Add tag to YAML front matter. Creates front matter if it doesn't exist. Returns True on success."""
     text = path.read_text(encoding='utf-8')
     # Split off the front‑matter block (if any)
     m = re.match(
@@ -201,13 +221,14 @@ def add_tag(path, tag):
         new_text = f'---\n{TAGS_KEY}:\n- {tag}\n---\n{rest}'
 
     path.write_text(new_text, encoding='utf-8')
-    print(f'Applied tag in {path.name}')
+    logger.debug(f'Applied tag in {path.name}')
     return True
 
 
 # --- Main ---
 
-def main():
+def main() -> None:
+    """Main entry point for auto-tagger."""
     p = argparse.ArgumentParser()
     p.add_argument('vault_path')
     p.add_argument('--tags-file')
@@ -216,7 +237,15 @@ def main():
     p.add_argument('--batch-size', type=int, default=32)
     p.add_argument('--force-embeddings', action='store_true')
     p.add_argument('--model', default='all-MiniLM-L6-v2')
+    p.add_argument('--verbose', action='store_true', help='Enable verbose logging (DEBUG level)')
     args = p.parse_args()
+
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s'
+    )
 
     files = find_markdown_files(args.vault_path)
     if args.remove_tags:
@@ -224,11 +253,11 @@ def main():
         for f in tqdm(files, desc='Removing tags'):
             if remove_tags(f):
                 removed += 1
-        print(f"Removed tags from {removed}/{len(files)} files.")
+        logger.info(f"Removed tags from {removed}/{len(files)} files.")
         return
 
     if not args.tags_file:
-        print("Error: --tags-file required")
+        logger.error("Error: --tags-file required")
         return
     tags = load_tags(args.tags_file)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -249,7 +278,7 @@ def main():
         for doc, tag in tqdm(mapping.items(), desc='Applying tags'):
             if add_tag(doc, tag):
                 applied += 1
-        print(f"Applied tags to {applied}/{len(mapping)} files.")
+        logger.info(f"Applied tags to {applied}/{len(mapping)} files.")
 
 if __name__ == '__main__':
     main()
