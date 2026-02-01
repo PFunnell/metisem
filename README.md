@@ -123,10 +123,15 @@ Embeddings are stored in `.obsidian_linker_cache/` using a model-specific cache 
 ### Setting Up Development Environment
 
 1. Fork and clone the repository
-2. Create a virtual environment:
+2. Create a virtual environment (venv or conda):
 ```bash
+# Using venv
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Or using conda
+conda create -n obsidian-linker python=3.8
+conda activate obsidian-linker
 ```
 3. Install dependencies:
 ```bash
@@ -159,9 +164,16 @@ mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports
 
 ### Slow embedding generation
 - First run always generates embeddings from scratch
-- Use `--force-embeddings` only when necessary
 - Consider using a smaller model for faster processing
 - GPU acceleration requires CUDA-compatible GPU and drivers
+
+### When to use `--force-embeddings`
+Use this flag to regenerate embeddings when:
+- You've changed the transformer model (`--model`)
+- You suspect cached embeddings are corrupted
+- You want to use a different embedding model for comparison
+
+**Note:** This rebuilds all embeddings from scratch and can be slow on large vaults. The cache automatically detects file content changes via SHA256 hashing, so you typically don't need this flag for normal operations.
 
 ### "Module not found" errors
 - Ensure all dependencies are installed: `pip install -r requirements.txt`
@@ -178,7 +190,7 @@ mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports
 
 ## 📸 Example Screenshot
 
-![Semantic links in Obsidian](metisem1.png)
+![Semantic links in Obsidian](docs/images/metisem1.png)
 
 ## 🧠 Background
 
