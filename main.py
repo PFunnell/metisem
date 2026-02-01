@@ -1,9 +1,17 @@
+"""Semantic link generator for Obsidian markdown vaults.
+
+This module generates semantic links between markdown files based on content similarity
+using sentence transformers and cosine similarity. Links are added to files as a
+'Related Notes' section with Obsidian wikilink format.
+"""
 import os
 import glob
 import argparse
 import re
 from pathlib import Path
 import hashlib
+import logging
+from typing import List, Dict, Tuple, Optional
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -11,6 +19,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import KMeans
 import torch
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 # --- Constants ---
 LINK_SECTION_START = "<!-- AUTO-GENERATED LINKS START -->"
@@ -23,12 +33,14 @@ MODIFY_DELETED = -2
 
 # --- Helper Functions ---
 
-def find_markdown_files(vault_path):
+def find_markdown_files(vault_path: str) -> List[Path]:
+    """Find all markdown files in the vault directory recursively."""
     files = list(glob.glob(os.path.join(vault_path, '**', '*.md'), recursive=True))
     return [Path(f) for f in files]
 
 
-def read_file_text_and_hash(path):
+def read_file_text_and_hash(path: Path) -> Tuple[Optional[str], Optional[str]]:
+    """Read file content and compute SHA256 hash. Returns (content, hash) or (None, None) on error."""
     try:
         content = path.read_text(encoding='utf-8')
         hasher = hashlib.sha256()
@@ -38,17 +50,20 @@ def read_file_text_and_hash(path):
         return None, None
 
 
-def load_embeddings_from_cache(cache_path):
+def load_embeddings_from_cache(cache_path: str) -> Dict[Path, Dict[str, any]]:
+    """Load cached embeddings from disk. Returns empty dict if cache doesn't exist or is corrupted."""
     try:
         data = np.load(cache_path, allow_pickle=True)
         if data.dtype.names:
             return {Path(item['path']): {'hash': item['hash'], 'embedding': item['embedding']} for item in data}
-    except:
+    except Exception as e:
+        # Cache file doesn't exist or is corrupted - will regenerate
         pass
     return {}
 
 
-def save_embeddings_to_cache(cache_path, embeddings_data):
+def save_embeddings_to_cache(cache_path: str, embeddings_data: Dict[Path, Dict[str, any]]) -> None:
+    """Save embeddings to cache file in numpy format."""
     if not embeddings_data:
         return
     str_keys = [str(p) for p in embeddings_data]
@@ -62,7 +77,8 @@ def save_embeddings_to_cache(cache_path, embeddings_data):
     np.save(cache_path, arr, allow_pickle=False)
 
 
-def generate_embeddings(file_paths, model, model_name, batch_size, device, cache_dir, force):
+def generate_embeddings(file_paths: List[Path], model, model_name: str, batch_size: int, device: str, cache_dir: str, force: bool) -> Tuple[np.ndarray, List[Path]]:
+    """Generate embeddings for files using sentence transformer model. Uses cache unless force=True."""
     if not file_paths:
         return np.array([]), []
     vault = os.path.commonpath(file_paths)
@@ -97,7 +113,8 @@ def generate_embeddings(file_paths, model, model_name, batch_size, device, cache
     return np.array(final_emb), valid
 
 
-def calculate_similarity(embeddings):
+def calculate_similarity(embeddings: np.ndarray) -> np.ndarray:
+    """Calculate cosine similarity matrix between embeddings. Diagonal set to 0."""
     emb = embeddings.astype(np.float32)
     norm = np.linalg.norm(emb, axis=1, keepdims=True)
     sim = cosine_similarity(emb / norm, emb / norm)
@@ -105,7 +122,8 @@ def calculate_similarity(embeddings):
     return sim
 
 
-def find_links(similarity_matrix, paths, threshold, min_links, max_links, cluster_labels=None):
+def find_links(similarity_matrix: np.ndarray, paths: List[Path], threshold: float, min_links: int, max_links: int, cluster_labels: Optional[np.ndarray] = None) -> Dict[Path, List[Path]]:
+    """Find related files based on similarity scores. Respects cluster boundaries if labels provided."""
     links = {}
     for i, src in enumerate(paths):
         sims = similarity_matrix[i]
@@ -138,7 +156,8 @@ def find_links(similarity_matrix, paths, threshold, min_links, max_links, cluste
     return links
 
 
-def modify_markdown_file(fp, links, delete_existing):
+def modify_markdown_file(fp: Path, links: List[Path], delete_existing: bool) -> int:
+    """Add or update Related Notes section in markdown file. Returns count of links added, or error code."""
     try:
         text = fp.read_text(encoding='utf-8')
         start = re.escape(LINK_SECTION_START)
@@ -171,11 +190,13 @@ def modify_markdown_file(fp, links, delete_existing):
             new = text.rstrip() + block
         fp.write_text(new, encoding='utf-8')
         return len(items)
-    except:
+    except Exception as e:
+        # File read/write error
         return MODIFY_ERROR
 
 
-def main():
+def main() -> None:
+    """Main entry point for semantic link generator."""
     p = argparse.ArgumentParser()
     p.add_argument('vault_path')
     p.add_argument(
@@ -214,7 +235,18 @@ def main():
         '--model', type=str, default='all-MiniLM-L6-v2',
         help='Sentence Transformer model name'
     )
+    p.add_argument(
+        '--verbose', action='store_true',
+        help='Enable verbose logging (DEBUG level)'
+    )
     args = p.parse_args()
+
+    # Configure logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format='%(levelname)s: %(message)s'
+    )
 
     vault = args.vault_path
     # deletion-only mode
@@ -225,7 +257,7 @@ def main():
             r = modify_markdown_file(f, [], True)
             if r == MODIFY_DELETED:
                 removed += 1
-        print(f"Removed link blocks from {removed}/{len(files)} files.")
+        logger.info(f"Removed link blocks from {removed}/{len(files)} files.")
         return
 
     files = find_markdown_files(vault)
@@ -248,7 +280,7 @@ def main():
     sim = calculate_similarity(emb)
     total_pairs = sim.size
     above = np.sum(sim >= args.similarity)
-    print(f"Threshold={args.similarity}: {above}/{total_pairs} pairs ({above/total_pairs:.2%}) above threshold")
+    logger.info(f"Threshold={args.similarity}: {above}/{total_pairs} pairs ({above/total_pairs:.2%}) above threshold")
 
     links = find_links(
         sim,
@@ -263,13 +295,13 @@ def main():
     for src, tgt in links.items():
         count = len(tgt)
         dist[count] = dist.get(count, 0) + 1
-    print("Link count distribution:")
+    logger.info("Link count distribution:")
     for count in range(args.min_links, args.max_links+1):
         num = dist.get(count, 0)
-        print(f"  {num} files with {count} links")
+        logger.info(f"  {num} files with {count} links")
     zero = dist.get(0, 0)
     if zero:
-        print(f"  {zero} files with 0 links (none above threshold and no fallback configured)")
+        logger.info(f"  {zero} files with 0 links (none above threshold and no fallback configured)")
 
     total_added = 0
     modified = 0
@@ -282,7 +314,7 @@ def main():
             modified += 1
         elif r == MODIFY_ERROR:
             errors += 1
-    print(
+    logger.info(
         f"Files modified: {modified}, "
         f"total links added: {total_added}, errors: {errors}"
     )
