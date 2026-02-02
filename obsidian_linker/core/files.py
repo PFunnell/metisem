@@ -7,6 +7,7 @@ content hashes for cache invalidation.
 import hashlib
 from pathlib import Path
 from typing import List, Tuple, Optional
+from dataclasses import dataclass
 
 
 def find_markdown_files(vault_path: str) -> List[Path]:
@@ -68,3 +69,79 @@ def get_common_vault_path(file_paths: List[Path]) -> Path:
 
     common = os.path.commonpath([str(p) for p in file_paths])
     return Path(common)
+
+
+@dataclass
+class ChangeSet:
+    """Results of change detection."""
+    new_files: List[Path]
+    modified_files: List[Path]
+    deleted_files: List[Path]
+    unchanged_files: List[Path]
+
+
+def detect_file_changes(
+    current_files: List[Path],
+    db,  # CacheDatabase instance
+    model_name: str
+) -> ChangeSet:
+    """Detect new, modified, deleted, and unchanged files.
+
+    Uses a two-phase approach:
+    1. Fast mtime scan to identify potential changes
+    2. Hash verification only for mtime mismatches
+
+    Args:
+        current_files: List of current file paths in vault
+        db: CacheDatabase instance
+        model_name: Name of embedding model
+
+    Returns:
+        ChangeSet with categorized file lists
+    """
+    new_files = []
+    modified_files = []
+    unchanged_files = []
+
+    # Get all cached paths for this model
+    cached_paths_str = set(db.get_all_paths(model_name))
+    cached_paths = {Path(p) for p in cached_paths_str}
+
+    # Check each current file
+    for file_path in current_files:
+        if str(file_path) not in cached_paths_str:
+            # Not in cache -> new file
+            new_files.append(file_path)
+        else:
+            # In cache -> check if modified
+            try:
+                stat = file_path.stat()
+                mtime_ns = stat.st_mtime_ns
+                cached = db.get_file_metadata(file_path)
+
+                if cached and cached['mtime_ns'] == mtime_ns:
+                    # mtime unchanged -> file unchanged
+                    unchanged_files.append(file_path)
+                else:
+                    # mtime changed -> verify with hash
+                    current_hash = compute_file_hash(file_path)
+                    if current_hash and cached and cached['content_hash'] == current_hash:
+                        # Hash same despite mtime change -> unchanged (update mtime in cache)
+                        unchanged_files.append(file_path)
+                    else:
+                        # Hash different -> modified
+                        modified_files.append(file_path)
+            except (OSError, FileNotFoundError):
+                # File exists in current_files but can't stat -> treat as modified
+                modified_files.append(file_path)
+
+    # Files in cache but not in current set -> deleted
+    current_paths = {file_path for file_path in current_files}
+    deleted_files = [p for p in cached_paths if p not in current_paths]
+
+    return ChangeSet(
+        new_files=new_files,
+        modified_files=modified_files,
+        deleted_files=deleted_files,
+        unchanged_files=unchanged_files
+    )
