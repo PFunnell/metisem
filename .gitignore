@@ -38,3 +38,7 @@ models/
 # Secrets
 secrets/
 credentials/
+
+# Private documentation (interview-sensitive)
+docs/transcripts/
+thoughts/
