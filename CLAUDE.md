@@ -42,7 +42,7 @@ python tagger.py /path/to/vault --remove-tags
 python tagger.py /path/to/vault --tags-file tags.txt --apply-tags --force-embeddings
 ```
 
-### Summarizer (Ollama)
+### Summariser (Ollama)
 ```bash
 # Ensure Ollama is running first: ollama serve
 

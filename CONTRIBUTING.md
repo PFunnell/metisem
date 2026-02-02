@@ -9,7 +9,7 @@ Thank you for considering contributing to obsidian-linker! This document provide
 If you find a bug, please open an issue with:
 - A clear, descriptive title
 - Steps to reproduce the problem
-- Expected vs actual behavior
+- Expected vs actual behaviour
 - Your environment (OS, Python version, etc.)
 - Relevant log output or error messages
 
@@ -63,7 +63,7 @@ logger.error("Failed to process file: %s", filepath)
 
 - Add module-level docstrings explaining the module's purpose
 - Add function docstrings for all public functions
-- Update README.md if adding new features or changing behavior
+- Update README.md if adding new features or changing behaviour
 - Include examples for new CLI options
 
 ## Development Workflow
@@ -92,7 +92,7 @@ pre-commit install
 Currently, testing is manual:
 1. Create or use a test vault with markdown files
 2. Run your changes against the test vault
-3. Verify expected behavior
+3. Verify expected behaviour
 4. Check that no files are corrupted
 
 Future: Automated tests are planned.

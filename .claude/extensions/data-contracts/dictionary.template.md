@@ -84,7 +84,7 @@ Copy this template for new models.
 
 ### Notes
 
-- Any special behavior or business rules
+- Any special behaviour or business rules
 - Migration history if applicable
 
 ---

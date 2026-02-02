@@ -22,7 +22,7 @@ Complete before marking PR as ready:
 ### Documentation
 - [ ] Complex logic has explanatory comments
 - [ ] Public APIs have documentation
-- [ ] README updated if behavior changed
+- [ ] README updated if behaviour changed
 - [ ] Data dictionary updated if models changed
 
 ### Security
@@ -55,7 +55,7 @@ When reviewing others' PRs:
 ### Maintainability
 - [ ] Code is readable
 - [ ] Would I understand this in 6 months?
-- [ ] Tests make behavior clear
+- [ ] Tests make behaviour clear
 - [ ] No magic numbers without explanation
 
 ## Common Issues to Watch For

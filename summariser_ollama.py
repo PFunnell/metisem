@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Summarizer for markdown vaults using Ollama local LLM.
+"""Summariser for markdown vaults using Ollama local LLM.
 
 Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
 This module generates summaries for markdown files using a local Ollama instance.
@@ -59,7 +59,7 @@ def insert_summary(filepath: Path, summary: str) -> None:
     except Exception as e:
         logger.error(f"Error inserting summary into {filepath}: {e}")
 
-def summarize_text(text: str, model_name: str, max_length: int) -> str:
+def summarise_text(text: str, model_name: str, max_length: int) -> str:
     """Generate a summary using Ollama's API."""
     try:
         # Truncate input text if too long (approximate token count)
@@ -72,7 +72,7 @@ def summarize_text(text: str, model_name: str, max_length: int) -> str:
 
         # Enhanced prompt for better summaries
         prompt = (
-            "Act as an expert summarizer. Analyze the following conversation and create "
+            "Act as an expert summariser. Analyse the following conversation and create "
             "a comprehensive summary that:\n"
             "1. Identifies the core discussion topics and their interconnections\n"
             "2. Captures key questions raised and significant responses\n"
@@ -84,7 +84,7 @@ def summarize_text(text: str, model_name: str, max_length: int) -> str:
             "- Include specific examples and references mentioned\n"
             "- Connect related ideas across the discussion\n"
             "- Keep technical accuracy while remaining accessible\n\n"
-            "Text to summarize:\n"
+            "Text to summarise:\n"
             f"{text}\n\n"
             "Write a single-paragraph summary that flows naturally and captures the depth "
             "and nuance of the discussion:"
@@ -115,7 +115,7 @@ def summarize_text(text: str, model_name: str, max_length: int) -> str:
         return response.json()['response'].strip()
 
     except Exception as e:
-        logger.error(f"Error during summarization: {e}")
+        logger.error(f"Error during summarisation: {e}")
         return ""
 
 def main() -> None:
@@ -173,7 +173,7 @@ def main() -> None:
                     logger.debug(f"Skipping empty file: {f}")
                     continue
 
-                summary = summarize_text(text, args.model, args.max_summary_length)
+                summary = summarise_text(text, args.model, args.max_summary_length)
                 if summary:
                     insert_summary(f, summary)
                     successful += 1

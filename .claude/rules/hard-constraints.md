@@ -24,3 +24,4 @@ Move misplaced artefacts to canonical locations immediately.
 - **Markdown**: Always specify language in code blocks. No hard-wrapping.
 - **No time estimates**: Focus on what, not how long.
 - **Performance claims need data**: No arbitrary SLAs without measurements.
+- **UK English spelling and punctuation**: Ensure code, docs and other entities comply.

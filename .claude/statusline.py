@@ -5,7 +5,7 @@ Displays:
 - Current model
 - Git branch and dirty state
 - Active plan (from RESUME.md)
-- Context window usage with color warnings
+- Context window usage with colour warnings
 """
 import json
 import sys
@@ -24,7 +24,7 @@ model = data.get('model', {}).get('display_name', 'Claude')
 context_used = data.get('context_window', {}).get('used_percentage', 0)
 cwd = data.get('workspace', {}).get('current_dir', os.getcwd())
 
-# ANSI color codes
+# ANSI colour codes
 BLUE = '\033[0;34m'
 GREEN = '\033[0;32m'
 YELLOW = '\033[1;33m'
@@ -94,7 +94,7 @@ def get_plan_info(cwd: str) -> str:
 
 
 def get_context_info(context_used: float) -> str:
-    """Format context window usage with color based on percentage."""
+    """Format context window usage with colour based on percentage."""
     context_int = int(round(context_used))
     if context_int >= 75:
         return f"{RED}ctx:{context_int}%{RESET}"

@@ -1,7 +1,7 @@
-"""Update Obsidian graph.json with color groups for tags.
+"""Update Obsidian graph.json with colour groups for tags.
 
 Reads tags from a tags file and updates the vault's .obsidian/graph.json to assign
-distinct colors to each tag in the graph view.
+distinct colours to each tag in the graph view.
 """
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List
 
 
-# Color palette for tags (visually distinct colors)
+# Colour palette for tags (visually distinct colours)
 COLOR_PALETTE = [
     "#e74c3c",  # red
     "#3498db",  # blue
@@ -57,13 +57,13 @@ def load_tags_from_file(tags_file: Path) -> List[str]:
 
 
 def create_color_groups(tags: List[str]) -> List[Dict]:
-    """Create color groups for tags.
+    """Create colour groups for tags.
 
     Args:
         tags: List of tag names
 
     Returns:
-        List of color group dictionaries for graph.json
+        List of colour group dictionaries for graph.json
     """
     color_groups = []
     for i, tag in enumerate(tags):
@@ -79,11 +79,11 @@ def create_color_groups(tags: List[str]) -> List[Dict]:
 
 
 def update_graph_json(vault_path: Path, color_groups: List[Dict]) -> None:
-    """Update or create .obsidian/graph.json with color groups.
+    """Update or create .obsidian/graph.json with colour groups.
 
     Args:
         vault_path: Path to Obsidian vault
-        color_groups: List of color group dictionaries
+        color_groups: List of colour group dictionaries
     """
     obsidian_dir = vault_path / ".obsidian"
     graph_file = obsidian_dir / "graph.json"
@@ -98,7 +98,7 @@ def update_graph_json(vault_path: Path, color_groups: List[Dict]) -> None:
     else:
         config = {}
 
-    # Update color groups
+    # Update colour groups
     config['colorGroups'] = color_groups
 
     # Ensure other common settings exist
@@ -116,13 +116,13 @@ def update_graph_json(vault_path: Path, color_groups: List[Dict]) -> None:
     # Write back
     obsidian_dir.mkdir(exist_ok=True)
     graph_file.write_text(json.dumps(config, indent=2), encoding='utf-8')
-    print(f"Updated {graph_file} with {len(color_groups)} color groups")
+    print(f"Updated {graph_file} with {len(color_groups)} colour groups")
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Update Obsidian graph.json with tag color groups"
+        description="Update Obsidian graph.json with tag colour groups"
     )
     parser.add_argument('vault_path', help='Path to Obsidian vault')
     parser.add_argument('--tags-file', required=True, help='Path to tags file')
@@ -143,13 +143,13 @@ def main():
     tags = load_tags_from_file(tags_file)
     print(f"Loaded {len(tags)} tags from {tags_file}")
 
-    # Create color groups
+    # Create colour groups
     color_groups = create_color_groups(tags)
 
     # Update graph.json
     update_graph_json(vault_path, color_groups)
 
-    print("\nColor assignments:")
+    print("\nColour assignments:")
     for i, tag in enumerate(tags):
         color = COLOR_PALETTE[i % len(COLOR_PALETTE)]
         print(f"  {tag}: {color}")

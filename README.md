@@ -1,8 +1,8 @@
 # Metisem - Markdown Semantic Analysis Toolkit
 
-**Automatically discover semantic connections, auto-tag, and summarize your markdown knowledge base**
+**Automatically discover semantic connections, auto-tag, and summarise your markdown knowledge base**
 
-Transform your markdown notes into an interconnected web of ideas. Metisem analyzes note content using state-of-the-art NLP to generate intelligent backlinks, auto-tag notes, and create AI-powered summaries—helping you surface hidden connections and navigate large vaults with ease.
+Transform your markdown notes into an interconnected web of ideas. Metisem analyses note content using state-of-the-art NLP to generate intelligent backlinks, auto-tag notes, and create AI-powered summaries, helping you surface hidden connections and navigate large vaults with ease.
 
 Compatible with Obsidian, Logseq, and other markdown-based knowledge management tools.
 
@@ -14,9 +14,9 @@ Built for researchers, PKM enthusiasts, and anyone managing extensive markdown c
 
 Three specialized tools for enhancing your markdown vault:
 
-- **Semantic Linker** (`main.py`) — Generates contextual backlinks between related notes based on content similarity
-- **Auto-Tagger** (`tagger.py`) — Intelligently tags notes by matching content against custom tag descriptions
-- **Summarizer** (`summariser_ollama.py`) — Creates concise summaries using local LLMs via Ollama
+- **Semantic Linker** (`main.py`) - Generates contextual backlinks between related notes based on content similarity
+- **Auto-Tagger** (`tagger.py`) - Intelligently tags notes by matching content against custom tag descriptions
+- **Summariser** (`summariser_ollama.py`) - Creates concise summaries using local LLMs via Ollama
 
 All tools leverage [Sentence Transformers](https://www.sbert.net/) for semantic understanding, with intelligent caching that automatically detects content changes via SHA256 hashing.
 
@@ -27,28 +27,28 @@ All tools leverage [Sentence Transformers](https://www.sbert.net/) for semantic 
 ## Features
 
 ### Semantic Link Generator
-- **Content-aware linking** — Uses cosine similarity on embeddings to identify semantically related notes
-- **Customizable thresholds** — Control link quantity and quality with configurable similarity scores
-- **Non-invasive** — Links are inserted in clearly marked sections that can be updated or removed anytime
-- **Incremental caching** — Only re-processes files whose content has changed
-- **GPU acceleration** — Automatically uses CUDA when available for faster embedding generation
+- **Content-aware linking** -Uses cosine similarity on embeddings to identify semantically related notes
+- **Customizable thresholds** -Control link quantity and quality with configurable similarity scores
+- **Non-invasive** -Links are inserted in clearly marked sections that can be updated or removed anytime
+- **Incremental caching** -Only re-processes files whose content has changed
+- **GPU acceleration** -Automatically uses CUDA when available for faster embedding generation
 
 ### Auto-Tagger
-- **Semantic tag matching** — Tags notes based on conceptual similarity to tag descriptions, not just keywords
-- **Custom taxonomies** — Define your own tag vocabulary with human-readable descriptions
-- **YAML front matter integration** — Seamlessly works with Obsidian's native tag system
-- **Batch operations** — Tag entire vaults in one pass
+- **Semantic tag matching** -Tags notes based on conceptual similarity to tag descriptions, not just keywords
+- **Custom taxonomies** -Define your own tag vocabulary with human-readable descriptions
+- **YAML front matter integration** -Seamlessly works with Obsidian's native tag system
+- **Batch operations** -Tag entire vaults in one pass
 
-### Summarizer (Ollama)
-- **Local LLM integration** — Generates summaries using models running on your machine (privacy-first)
-- **Configurable prompts** — Optimized for conversational content, easily customizable
-- **Flexible deployment** — Point to any Ollama instance via environment variable
+### Summariser (Ollama)
+- **Local LLM integration** -Generates summaries using models running on your machine (privacy-first)
+- **Configurable prompts** -Optimized for conversational content, easily customizable
+- **Flexible deployment** -Point to any Ollama instance via environment variable
 
 ---
 
 ## About the Name
 
-**Metisem** combines "Metis" (Greek goddess of wisdom and counsel) with "semantic" — reflecting the tool's purpose of bringing intelligent semantic understanding to your knowledge base.
+**Metisem** combines "Metis" (Greek goddess of wisdom and counsel) with "semantic" -reflecting the tool's purpose of bringing intelligent semantic understanding to your knowledge base.
 
 ---
 
@@ -87,7 +87,7 @@ python main.py /path/to/vault --apply-links --similarity 0.7 --max-links 5
 
 ```bash
 # Create tags.txt defining your taxonomy
-echo "productivity::Time management, GTD, task organization" > tags.txt
+echo "productivity::Time management, GTD, task organisation" > tags.txt
 echo "learning::Education, skill development, studying" >> tags.txt
 
 # Apply tags to vault
@@ -168,7 +168,7 @@ project_management::Agile, scrum, project planning and execution
 
 The description is embedded and compared semantically to note content.
 
-### Summarizer Options
+### Summariser Options
 
 ```bash
 python summariser_ollama.py <vault_path> [options]
@@ -185,7 +185,7 @@ python summariser_ollama.py <vault_path> [options]
 
 **Environment variables:**
 
-- `OLLAMA_HOST` — Ollama server address (default: `localhost:11434`)
+- `OLLAMA_HOST` -Ollama server address (default: `localhost:11434`)
 
 ---
 
@@ -195,11 +195,11 @@ python summariser_ollama.py <vault_path> [options]
 
 All tools implement incremental caching:
 
-1. **Content hashing** — Each file's content is SHA256-hashed
-2. **Cache lookup** — Existing embeddings are loaded from `.metisem_cache/`
-3. **Change detection** — Cached embeddings are used only if hashes match
-4. **Selective re-embedding** — Only modified files are re-processed
-5. **Cache update** — New embeddings are saved for future runs
+1. **Content hashing** -Each file's content is SHA256-hashed
+2. **Cache lookup** -Existing embeddings are loaded from `.metisem_cache/`
+3. **Change detection** -Cached embeddings are used only if hashes match
+4. **Selective re-embedding** -Only modified files are re-processed
+5. **Cache update** -New embeddings are saved for future runs
 
 This means the first run is slow (generates all embeddings), but subsequent runs are fast (only processes changed files).
 
@@ -210,15 +210,15 @@ Force cache regeneration when:
 - Comparing results across different models
 - Suspecting cache corruption
 
-**Not needed** for normal operations—content changes are detected automatically.
+**Not needed** for normal operations - content changes are detected automatically.
 
 ### Model Selection
 
 Default model: `all-MiniLM-L6-v2` (fast, good quality, 384-dim embeddings)
 
 Alternative models:
-- `all-mpnet-base-v2` — Higher quality, slower (768-dim)
-- `paraphrase-multilingual-MiniLM-L12-v2` — Multilingual support
+- `all-mpnet-base-v2` -Higher quality, slower (768-dim)
+- `paraphrase-multilingual-MiniLM-L12-v2` -Multilingual support
 - Any [Sentence Transformers](https://www.sbert.net/docs/pretrained_models.html) model
 
 ---
@@ -289,10 +289,10 @@ pre-commit install
 
 ### Code Quality
 
-- **Type hints** — Full type annotations on all public functions
-- **Linting** — Ruff configured in `pyproject.toml`
-- **Pre-commit hooks** — Automatic formatting and validation
-- **Type checking** — Run `mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports`
+- **Type hints** -Full type annotations on all public functions
+- **Linting** -Ruff configured in `pyproject.toml`
+- **Pre-commit hooks** -Automatic formatting and validation
+- **Type checking** -Run `mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports`
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
@@ -309,7 +309,7 @@ python --version  # Verify Python 3.8+
 ```
 
 **Slow first run**
-Expected behavior—embeddings are being generated for all files. Subsequent runs will be much faster.
+Expected behaviour - embeddings are being generated for all files. Subsequent runs will be much faster.
 
 **Out of memory errors**
 Reduce batch size: `--batch-size 8` (default: 32)
@@ -342,7 +342,7 @@ python main.py ~/vault --verbose
 
 This toolkit emerged from the challenge of navigating hundreds of ChatGPT conversation exports imported to Obsidian. By automatically discovering semantic relationships between notes, it transformed an overwhelming collection into a navigable knowledge graph.
 
-While originally designed for AI conversation archives (via [nexus-ai-chat-importer](https://github.com/Superkikim/nexus-ai-chat-importer)), the tools work equally well for any markdown collection—research notes, meeting minutes, blog drafts, or personal knowledge bases.
+While originally designed for AI conversation archives (via [nexus-ai-chat-importer](https://github.com/Superkikim/nexus-ai-chat-importer)), the tools work equally well for any markdown collection - research notes, meeting minutes, blog drafts, or personal knowledge bases.
 
 ---
 

@@ -16,7 +16,7 @@ type(scope): brief description
 |------|-------------|
 | `feat` | New feature or capability |
 | `fix` | Bug fix |
-| `refactor` | Code restructuring without behavior change |
+| `refactor` | Code restructuring without behaviour change |
 | `test` | Adding or modifying tests |
 | `docs` | Documentation only |
 | `chore` | Maintenance, dependencies, tooling |

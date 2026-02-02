@@ -1,1 +1,1 @@
-"""LLM provider implementations for summarization."""
+"""LLM provider implementations for summarisation."""
