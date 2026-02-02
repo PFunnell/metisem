@@ -190,7 +190,7 @@ python summariser_ollama.py <vault_path> [options]
 All tools implement incremental caching:
 
 1. **Content hashing** — Each file's content is SHA256-hashed
-2. **Cache lookup** — Existing embeddings are loaded from `.obsidian_linker_cache/`
+2. **Cache lookup** — Existing embeddings are loaded from `.metisem_cache/`
 3. **Change detection** — Cached embeddings are used only if hashes match
 4. **Selective re-embedding** — Only modified files are re-processed
 5. **Cache update** — New embeddings are saved for future runs
@@ -320,7 +320,7 @@ export OLLAMA_HOST=localhost:11434
 **Cache issues**
 Delete cache directory to force full rebuild:
 ```bash
-rm -rf /path/to/vault/.obsidian_linker_cache/
+rm -rf /path/to/vault/.metisem_cache/
 ```
 
 ### Advanced Debugging

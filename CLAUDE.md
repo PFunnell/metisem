@@ -69,7 +69,7 @@ Each tool is a standalone CLI script with its own argparse interface:
 
 ### Shared Patterns
 - All tools use `Path.rglob('*.md')` or `glob.glob` for file discovery
-- Embedding cache stored in `.obsidian_linker_cache/` using numpy `.npy`/`.npz` files
+- Embedding cache stored in `.metisem_cache/` using numpy `.npy`/`.npz` files
 - Content modification uses HTML comment markers for section boundaries:
   - Links: `<!-- AUTO-GENERATED LINKS START -->` / `END`
   - Summaries: `<!-- AUTO-GENERATED SUMMARY START -->` / `END`
