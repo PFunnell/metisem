@@ -1,5 +1,6 @@
-"""Auto-tagger for Obsidian markdown vaults.
+"""Auto-tagger for markdown vaults.
 
+Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
 This module automatically tags notes based on semantic similarity between note content
 and tag descriptions. Tags are added to YAML front matter.
 """
@@ -16,10 +17,10 @@ from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from obsidian_linker.core.files import find_markdown_files
-from obsidian_linker.core.cache import generate_embeddings
-from obsidian_linker.core.embeddings import encode_texts
-from obsidian_linker.core.database import CacheDatabase
+from metisem.core.files import find_markdown_files
+from metisem.core.cache import generate_embeddings
+from metisem.core.embeddings import encode_texts
+from metisem.core.database import CacheDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ def load_and_embed_tags(
     Returns:
         Array of tag embeddings in original tag order
     """
-    cache_dir = Path(vault_path) / ".obsidian_linker_cache"
+    cache_dir = Path(vault_path) / ".metisem_cache"
     db = CacheDatabase(cache_dir / "cache.db")
 
     to_embed = []

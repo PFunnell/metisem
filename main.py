@@ -1,8 +1,9 @@
-"""Semantic link generator for Obsidian markdown vaults.
+"""Semantic link generator for markdown vaults.
 
+Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
 This module generates semantic links between markdown files based on content similarity
 using sentence transformers and cosine similarity. Links are added to files as a
-'Related Notes' section with Obsidian wikilink format.
+'Related Notes' section with wikilink format.
 """
 import argparse
 import re
@@ -16,9 +17,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import KMeans
 import torch
 
-from obsidian_linker.core.files import find_markdown_files
-from obsidian_linker.core.cache import generate_embeddings
-from obsidian_linker.core.markers import (
+from metisem.core.files import find_markdown_files
+from metisem.core.cache import generate_embeddings
+from metisem.core.markers import (
     LINK_SECTION_START,
     LINK_SECTION_END,
     has_marker_block,

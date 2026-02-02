@@ -1,6 +1,7 @@
 #!/usr/bin/env python
-"""Summarizer for Obsidian markdown vaults using Ollama local LLM.
+"""Summarizer for markdown vaults using Ollama local LLM.
 
+Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
 This module generates summaries for markdown files using a local Ollama instance.
 Summaries are prepended to files as HTML-comment-wrapped blocks.
 """
@@ -12,8 +13,8 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
-from obsidian_linker.core.files import find_markdown_files as _find_all_md
-from obsidian_linker.core.markers import (
+from metisem.core.files import find_markdown_files as _find_all_md
+from metisem.core.markers import (
     SUMMARY_START,
     SUMMARY_END,
     has_marker_block,

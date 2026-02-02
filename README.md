@@ -1,8 +1,10 @@
-# Obsidian Semantic Linker
+# Metisem - Markdown Semantic Analysis Toolkit
 
-**Automatically discover and link related notes in your Obsidian vault using semantic similarity.**
+**Automatically discover semantic connections, auto-tag, and summarize your markdown knowledge base**
 
-Transform your markdown knowledge base into an interconnected web of ideas. This toolkit analyzes note content using state-of-the-art NLP to generate intelligent backlinks, auto-tag notes, and create AI-powered summaries—helping you surface hidden connections and navigate large vaults with ease.
+Transform your markdown notes into an interconnected web of ideas. Metisem analyzes note content using state-of-the-art NLP to generate intelligent backlinks, auto-tag notes, and create AI-powered summaries—helping you surface hidden connections and navigate large vaults with ease.
+
+Compatible with Obsidian, Logseq, and other markdown-based knowledge management tools.
 
 Built for researchers, PKM enthusiasts, and anyone managing extensive markdown collections.
 
@@ -10,7 +12,7 @@ Built for researchers, PKM enthusiasts, and anyone managing extensive markdown c
 
 ## Overview
 
-Three specialized tools for enhancing your Obsidian vault:
+Three specialized tools for enhancing your markdown vault:
 
 - **Semantic Linker** (`main.py`) — Generates contextual backlinks between related notes based on content similarity
 - **Auto-Tagger** (`tagger.py`) — Intelligently tags notes by matching content against custom tag descriptions

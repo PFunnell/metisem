@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python toolchain for enhancing Obsidian markdown vaults using semantic analysis and local LLMs:
+Metisem: Python toolchain for enhancing markdown vaults using semantic analysis and local LLMs.
+Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
+
 - **Semantic linking** between related notes (Sentence Transformers)
 - **Auto-tagging** based on custom tag definitions
 - **Summarization** via Ollama-served local LLMs

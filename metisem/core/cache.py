@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 class EmbeddingCache:
     """Manages embedding cache for a vault and model combination."""
 
-    def __init__(self, vault_path: str, model_name: str, cache_dir: str = ".obsidian_linker_cache"):
+    def __init__(self, vault_path: str, model_name: str, cache_dir: str = ".metisem_cache"):
         """Initialize cache manager.
 
         Args:
-            vault_path: Path to the Obsidian vault
+            vault_path: Path to the markdown vault
             model_name: Name of the sentence transformer model
             cache_dir: Directory name for cache storage (relative to vault)
         """
