@@ -46,6 +46,12 @@ All tools leverage [Sentence Transformers](https://www.sbert.net/) for semantic 
 
 ---
 
+## About the Name
+
+**Metisem** combines "Metis" (Greek goddess of wisdom and counsel) with "semantic" — reflecting the tool's purpose of bringing intelligent semantic understanding to your knowledge base.
+
+---
+
 ## Quick Start
 
 ### Installation
