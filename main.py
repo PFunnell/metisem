@@ -185,9 +185,11 @@ def main() -> None:
         return
 
     files = find_markdown_files(vault)
+    logger.info(f"Scanning {len(files)} markdown files...")
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = SentenceTransformer(args.model, device=device)
-    emb, valid = generate_embeddings(
+    emb, valid, stats = generate_embeddings(
         files,
         model,
         args.model,
@@ -196,11 +198,20 @@ def main() -> None:
         vault,
         args.force_embeddings
     )
+
+    # Log change summary
+    if not args.force_embeddings:
+        logger.info(
+            f"Change detection: {stats['new']} new, {stats['modified']} modified, "
+            f"{stats['deleted']} deleted, {stats['unchanged']} unchanged"
+        )
     if args.clusters and len(valid) >= args.clusters:
         km = KMeans(n_clusters=args.clusters, random_state=0).fit(emb)
         labels = km.labels_
     else:
         labels = None
+
+    logger.info(f"Computing similarity matrix ({len(valid)} files)...")
     sim = calculate_similarity(emb)
     total_pairs = sim.size
     above = np.sum(sim >= args.similarity)
