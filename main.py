@@ -241,18 +241,32 @@ def main() -> None:
     total_added = 0
     modified = 0
     errors = 0
-    for f in files:
-        to_add = links.get(Path(f), [])
-        r = modify_markdown_file(Path(f), to_add, args.delete_links)
-        if r > 0:
-            total_added += r
-            modified += 1
-        elif r == MODIFY_ERROR:
-            errors += 1
-    logger.info(
-        f"Files modified: {modified}, "
-        f"total links added: {total_added}, errors: {errors}"
-    )
+
+    if args.apply_links or args.delete_links:
+        # Actually modify files
+        for f in files:
+            to_add = links.get(Path(f), [])
+            r = modify_markdown_file(Path(f), to_add, args.delete_links)
+            if r > 0:
+                total_added += r
+                modified += 1
+            elif r == MODIFY_ERROR:
+                errors += 1
+        logger.info(
+            f"Files modified: {modified}, "
+            f"total links added: {total_added}, errors: {errors}"
+        )
+    else:
+        # Preview mode: report what would be done without modifying files
+        for f in files:
+            to_add = links.get(Path(f), [])
+            if to_add:
+                total_added += len(to_add)
+                modified += 1
+        logger.info(
+            f"Preview: {modified} files would be modified, "
+            f"{total_added} links would be added. Use --apply-links to modify files."
+        )
 
 if __name__ == '__main__':
     main()
