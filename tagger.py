@@ -5,6 +5,8 @@ and tag descriptions. Tags are added to YAML front matter.
 """
 import re
 import argparse
+import hashlib
+import numpy as np
 from pathlib import Path
 import logging
 from typing import List, Dict
@@ -17,6 +19,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from obsidian_linker.core.files import find_markdown_files
 from obsidian_linker.core.cache import generate_embeddings
 from obsidian_linker.core.embeddings import encode_texts
+from obsidian_linker.core.database import CacheDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +161,67 @@ def add_tag(path: Path, tag: str) -> bool:
     return True
 
 
+# --- Tag Embedding Cache ---
+
+def load_and_embed_tags(
+    tags: Dict[str, str],
+    model: SentenceTransformer,
+    model_name: str,
+    batch_size: int,
+    device: str,
+    vault_path: str,
+    force: bool = False
+) -> np.ndarray:
+    """Load tags and generate/cache embeddings.
+
+    Args:
+        tags: Dictionary mapping tag names to descriptions
+        model: SentenceTransformer model instance
+        model_name: Name of the model (for cache)
+        batch_size: Batch size for encoding
+        device: Device to use ('cpu' or 'cuda')
+        vault_path: Path to the vault (for cache location)
+        force: If True, ignore cache and regenerate embeddings
+
+    Returns:
+        Array of tag embeddings in original tag order
+    """
+    cache_dir = Path(vault_path) / ".obsidian_linker_cache"
+    db = CacheDatabase(cache_dir / "cache.db")
+
+    to_embed = []
+    cached_embeddings = []
+
+    for tag_name, description in tags.items():
+        desc_hash = hashlib.sha256(description.encode('utf-8')).hexdigest()
+
+        if not force:
+            cached = db.get_tag_embedding(tag_name, model_name)
+            if cached and cached['content_hash'] == desc_hash:
+                cached_embeddings.append((tag_name, cached['embedding']))
+                continue
+
+        # Tag needs embedding
+        to_embed.append((tag_name, description, desc_hash))
+
+    # Generate embeddings for new/changed tags
+    if to_embed:
+        logger.info(f"Generating embeddings for {len(to_embed)} tags...")
+        texts = [desc for _, desc, _ in to_embed]
+        embs = encode_texts(texts, model, batch_size, device, show_progress=False)
+
+        for (tag_name, desc, desc_hash), emb in zip(to_embed, embs):
+            db.set_tag_embedding(tag_name, desc, desc_hash, model_name, emb)
+            cached_embeddings.append((tag_name, emb))
+    else:
+        logger.info(f"Using cached embeddings for {len(cached_embeddings)} tags")
+
+    # Return embeddings in original tag order
+    tag_order = list(tags.keys())
+    emb_map = dict(cached_embeddings)
+    return np.array([emb_map[tag] for tag in tag_order])
+
+
 # --- Main ---
 
 def main() -> None:
@@ -196,11 +260,22 @@ def main() -> None:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = SentenceTransformer(args.model, device=device)
 
-    emb_docs, docs = generate_embeddings(
+    emb_docs, docs, stats = generate_embeddings(
         files, model, args.model, args.batch_size, device,
         args.vault_path, args.force_embeddings
     )
-    emb_tags = encode_texts(list(tags.values()), model, args.batch_size, device, show_progress=True)
+
+    # Log file embedding stats
+    logger.info(
+        f"File embeddings: {stats['new']} new, {stats['modified']} modified, "
+        f"{stats['unchanged']} unchanged, {stats['deleted']} deleted"
+    )
+
+    # Use cached tag embeddings
+    emb_tags = load_and_embed_tags(
+        tags, model, args.model, args.batch_size, device,
+        args.vault_path, args.force_embeddings
+    )
 
     sims = cosine_similarity(emb_docs, emb_tags)
     best = sims.argmax(axis=1)
