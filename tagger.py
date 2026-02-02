@@ -3,94 +3,27 @@
 This module automatically tags notes based on semantic similarity between note content
 and tag descriptions. Tags are added to YAML front matter.
 """
-import os
 import re
 import argparse
-import hashlib
 from pathlib import Path
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import yaml
-import numpy as np
 import torch
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from obsidian_linker.core.files import find_markdown_files
+from obsidian_linker.core.cache import generate_embeddings
+from obsidian_linker.core.embeddings import encode_texts
+
 logger = logging.getLogger(__name__)
 
 # --- Constants ---
-CACHE_DIR = ".obsidian_linker_cache"
 YAML_SEP = '---'
 TAGS_KEY = 'tags'
 TAG_DESC_SEP = '::'
-
-# --- File Utilities ---
-
-def find_markdown_files(vault: str) -> List[Path]:
-    """Find all markdown files in vault recursively."""
-    return list(Path(vault).rglob('*.md'))
-
-
-def read_and_hash(path: Path) -> Tuple[str, str]:
-    """Read file and compute SHA256 hash. Returns (content, hash)."""
-    text = path.read_text(encoding='utf-8')
-    h = hashlib.sha256(text.encode('utf-8')).hexdigest()
-    return text, h
-
-# --- Caching ---
-
-def cache_filepath(vault: str, model_name: str) -> Path:
-    """Generate cache file path for embeddings based on vault and model name."""
-    vault_name = Path(vault).resolve().name.replace('/', '_')
-    safe_name = model_name.replace('/', '_')
-    return Path(vault) / CACHE_DIR / f'embeddings_{vault_name}_{safe_name}.npz'
-
-
-def load_cache(cp: Path) -> Dict[Path, Dict[str, any]]:
-    """Load cached embeddings from npz file. Returns empty dict if not found."""
-    if cp.exists():
-        data = np.load(cp, allow_pickle=True)
-        return {Path(p): {'hash': h, 'emb': e} for p, h, e in zip(data['paths'], data['hashes'], data['embs'])}
-    return {}
-
-
-def save_cache(cp: Path, mapping: Dict[Path, Dict[str, any]]) -> None:
-    """Save embeddings to cache file in npz format."""
-    cp.parent.mkdir(exist_ok=True)
-    paths = np.array([str(p) for p in mapping])
-    hashes = np.array([mapping[p]['hash'] for p in mapping])
-    embs = np.stack([mapping[p]['emb'] for p in mapping])
-    np.savez(cp, paths=paths, hashes=hashes, embs=embs)
-
-# --- Embedding ---
-
-def embed_texts(texts: List[str], model, batch: int, device: str) -> np.ndarray:
-    """Generate embeddings for a list of texts using sentence transformer model."""
-    return model.encode(texts, batch_size=batch, show_progress_bar=True, device=device, convert_to_numpy=True)
-
-
-def embed_documents(files: List[Path], model, model_name: str, batch: int, device: str, vault: str, force: bool) -> Tuple[np.ndarray, List[Path]]:
-    """Generate or load cached embeddings for markdown files. Returns (embeddings_array, file_paths)."""
-    cp = cache_filepath(vault, model_name)
-    cached = {} if force else load_cache(cp)
-    to_process = []
-    mapping = {}
-    for p in files:
-        content, h = read_and_hash(p)
-        if p in cached and cached[p]['hash'] == h:
-            mapping[p] = cached[p]
-        else:
-            to_process.append((p, content, h))
-    if to_process:
-        texts = [tpl[1] for tpl in to_process]
-        embs = embed_texts(texts, model, batch, device)
-        for (p, _, h), e in zip(to_process, embs):
-            mapping[p] = {'hash': h, 'emb': e}
-        save_cache(cp, mapping)
-    paths = list(mapping)
-    embs = np.stack([mapping[p]['emb'] for p in paths])
-    return embs, paths
 
 # --- Tag Loading ---
 
@@ -263,11 +196,11 @@ def main() -> None:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = SentenceTransformer(args.model, device=device)
 
-    emb_docs, docs = embed_documents(
+    emb_docs, docs = generate_embeddings(
         files, model, args.model, args.batch_size, device,
         args.vault_path, args.force_embeddings
     )
-    emb_tags = embed_texts(list(tags.values()), model, args.batch_size, device)
+    emb_tags = encode_texts(list(tags.values()), model, args.batch_size, device, show_progress=True)
 
     sims = cosine_similarity(emb_docs, emb_tags)
     best = sims.argmax(axis=1)

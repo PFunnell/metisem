@@ -5,8 +5,6 @@ This module generates summaries for markdown files using a local Ollama instance
 Summaries are prepended to files as HTML-comment-wrapped blocks.
 """
 import os
-import glob
-import re
 import argparse
 import logging
 from pathlib import Path
@@ -14,33 +12,35 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
+from obsidian_linker.core.files import find_markdown_files as _find_all_md
+from obsidian_linker.core.markers import (
+    SUMMARY_START,
+    SUMMARY_END,
+    has_marker_block,
+    remove_marker_block
+)
+
 logger = logging.getLogger(__name__)
 
-SUMMARY_START = "<!-- AUTO-GENERATED SUMMARY START -->"
-SUMMARY_END = "<!-- AUTO-GENERATED SUMMARY END -->"
 OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'localhost:11434')
 
 def find_markdown_files(vault_path: str, max_files: Optional[int]) -> List[Path]:
     """Find markdown files in vault, optionally limited to max_files."""
-    all_md = glob.glob(os.path.join(vault_path, '**', '*.md'), recursive=True)
-    files = [Path(p) for p in all_md]
+    files = _find_all_md(vault_path)
     if max_files:
         logger.info(f"Limiting to {max_files} files out of {len(files)} total files found")
         return files[:max_files]
     return files
 
 def remove_summaries(filepath: Path) -> bool:
-    """Strip out any existing summary block from the top of the file."""
+    """Strip out any existing summary block from the file."""
     try:
         txt = filepath.read_text(encoding='utf-8')
-        pattern = re.compile(
-            rf"{re.escape(SUMMARY_START)}.*?{re.escape(SUMMARY_END)}\n*",
-            re.DOTALL
-        )
-        new_txt, count = pattern.subn('', txt)
-        if count:
+        if has_marker_block(txt, SUMMARY_START, SUMMARY_END):
+            new_txt = remove_marker_block(txt, SUMMARY_START, SUMMARY_END)
             filepath.write_text(new_txt, encoding='utf-8')
-        return count > 0
+            return True
+        return False
     except Exception as e:
         logger.error(f"Error removing summaries from {filepath}: {e}")
         return False
@@ -53,7 +53,7 @@ def insert_summary(filepath: Path, summary: str) -> None:
         filepath.write_text(block + txt, encoding='utf-8')
         # Verify summary was written
         new_txt = filepath.read_text(encoding='utf-8')
-        if SUMMARY_START not in new_txt:
+        if not has_marker_block(new_txt, SUMMARY_START, SUMMARY_END):
             logger.warning(f"Warning: Summary may not have been written to {filepath}")
     except Exception as e:
         logger.error(f"Error inserting summary into {filepath}: {e}")

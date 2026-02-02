@@ -4,113 +4,37 @@ This module generates semantic links between markdown files based on content sim
 using sentence transformers and cosine similarity. Links are added to files as a
 'Related Notes' section with Obsidian wikilink format.
 """
-import os
-import glob
 import argparse
 import re
-from pathlib import Path
-import hashlib
 import logging
-from typing import List, Dict, Tuple, Optional
+from pathlib import Path
+from typing import List, Dict, Optional
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import KMeans
 import torch
-from tqdm import tqdm
+
+from obsidian_linker.core.files import find_markdown_files
+from obsidian_linker.core.cache import generate_embeddings
+from obsidian_linker.core.markers import (
+    LINK_SECTION_START,
+    LINK_SECTION_END,
+    has_marker_block,
+    remove_marker_block,
+    replace_marker_block,
+    append_marker_block,
+    get_marker_pattern
+)
 
 logger = logging.getLogger(__name__)
-
-# --- Constants ---
-LINK_SECTION_START = "<!-- AUTO-GENERATED LINKS START -->"
-LINK_SECTION_END = "<!-- AUTO-GENERATED LINKS END -->"
-EMBEDDING_CACHE_DIR = ".obsidian_linker_cache"
 
 # Return codes for modify_markdown_file
 MODIFY_ERROR = -1
 MODIFY_DELETED = -2
 
 # --- Helper Functions ---
-
-def find_markdown_files(vault_path: str) -> List[Path]:
-    """Find all markdown files in the vault directory recursively."""
-    files = list(glob.glob(os.path.join(vault_path, '**', '*.md'), recursive=True))
-    return [Path(f) for f in files]
-
-
-def read_file_text_and_hash(path: Path) -> Tuple[Optional[str], Optional[str]]:
-    """Read file content and compute SHA256 hash. Returns (content, hash) or (None, None) on error."""
-    try:
-        content = path.read_text(encoding='utf-8')
-        hasher = hashlib.sha256()
-        hasher.update(content.encode('utf-8'))
-        return content, hasher.hexdigest()
-    except Exception:
-        return None, None
-
-
-def load_embeddings_from_cache(cache_path: str) -> Dict[Path, Dict[str, any]]:
-    """Load cached embeddings from disk. Returns empty dict if cache doesn't exist or is corrupted."""
-    try:
-        data = np.load(cache_path, allow_pickle=True)
-        if data.dtype.names:
-            return {Path(item['path']): {'hash': item['hash'], 'embedding': item['embedding']} for item in data}
-    except Exception as e:
-        # Cache file doesn't exist or is corrupted - will regenerate
-        pass
-    return {}
-
-
-def save_embeddings_to_cache(cache_path: str, embeddings_data: Dict[Path, Dict[str, any]]) -> None:
-    """Save embeddings to cache file in numpy format."""
-    if not embeddings_data:
-        return
-    str_keys = [str(p) for p in embeddings_data]
-    max_path = max(len(p) for p in str_keys)
-    dim = len(next(iter(embeddings_data.values()))['embedding'])
-    dtype = [('path', f'U{max_path}'), ('hash', 'U64'), ('embedding', f'{dim}f4')]
-    arr = np.array([(str(p), data['hash'], data['embedding']) for p, data in embeddings_data.items()], dtype=dtype)
-    d = os.path.dirname(cache_path)
-    if d:
-        os.makedirs(d, exist_ok=True)
-    np.save(cache_path, arr, allow_pickle=False)
-
-
-def generate_embeddings(file_paths: List[Path], model, model_name: str, batch_size: int, device: str, cache_dir: str, force: bool) -> Tuple[np.ndarray, List[Path]]:
-    """Generate embeddings for files using sentence transformer model. Uses cache unless force=True."""
-    if not file_paths:
-        return np.array([]), []
-    vault = os.path.commonpath(file_paths)
-    safe = os.path.basename(vault).replace('/', '_')
-    cache_file = f"embeddings_{safe}_{model_name.replace('/', '_')}.npy"
-    cache = os.path.join(cache_dir, cache_file)
-    cached = {} if force else load_embeddings_from_cache(cache)
-    to_embed = []
-    map_hash = {}
-    embeddings_map = {}
-    for p in file_paths:
-        content, h = read_file_text_and_hash(p)
-        if not h:
-            continue
-        map_hash[p] = h
-        if p in cached and cached[p]['hash'] == h:
-            embeddings_map[p] = cached[p]
-        else:
-            to_embed.append((p, content))
-    if to_embed:
-        texts = [c for _, c in to_embed]
-        embs = model.encode(texts, batch_size=batch_size, show_progress_bar=True, device=device, convert_to_numpy=True)
-        for (p, _), e in zip(to_embed, embs):
-            embeddings_map[p] = {'hash': map_hash[p], 'embedding': e}
-    save_embeddings_to_cache(cache, embeddings_map)
-    final_emb = []
-    valid = []
-    for p in file_paths:
-        if p in embeddings_map:
-            final_emb.append(embeddings_map[p]['embedding'])
-            valid.append(p)
-    return np.array(final_emb), valid
 
 
 def calculate_similarity(embeddings: np.ndarray) -> np.ndarray:
@@ -160,23 +84,21 @@ def modify_markdown_file(fp: Path, links: List[Path], delete_existing: bool) -> 
     """Add or update Related Notes section in markdown file. Returns count of links added, or error code."""
     try:
         text = fp.read_text(encoding='utf-8')
-        start = re.escape(LINK_SECTION_START)
-        end = re.escape(LINK_SECTION_END)
-        pattern = re.compile(
-            rf"^[ \t]*{start}[ \t]*$.*?^[ \t]*{end}[ \t]*$\n?",
-            flags=re.MULTILINE|re.DOTALL
-        )
-        has_block = bool(pattern.search(text))
+        has_block = has_marker_block(text, LINK_SECTION_START, LINK_SECTION_END)
+
         if delete_existing and not links:
             if has_block:
-                new = pattern.sub('', text)
+                new = remove_marker_block(text, LINK_SECTION_START, LINK_SECTION_END)
                 fp.write_text(new, encoding='utf-8')
                 return MODIFY_DELETED
             return 0
+
         if delete_existing and has_block:
-            text = pattern.sub('', text)
+            text = remove_marker_block(text, LINK_SECTION_START, LINK_SECTION_END)
+
         if not links:
             return 0
+
         items = sorted({f"[[{p.stem}]]" for p in links})
         block = (
             f"\n{LINK_SECTION_START}\n"
@@ -184,10 +106,12 @@ def modify_markdown_file(fp: Path, links: List[Path], delete_existing: bool) -> 
             + "\n".join(items)
             + f"\n{LINK_SECTION_END}\n"
         )
+
         if has_block:
-            new = pattern.sub(block, text)
+            new = replace_marker_block(text, LINK_SECTION_START, LINK_SECTION_END, block)
         else:
-            new = text.rstrip() + block
+            new = append_marker_block(text, block)
+
         fp.write_text(new, encoding='utf-8')
         return len(items)
     except Exception as e:
@@ -269,7 +193,7 @@ def main() -> None:
         args.model,
         args.batch_size,
         device,
-        os.path.join(vault, EMBEDDING_CACHE_DIR),
+        vault,
         args.force_embeddings
     )
     if args.clusters and len(valid) >= args.clusters:
