@@ -45,8 +45,9 @@ credentials/
 docs/transcripts/
 docs/research/
 
-# Thoughts directory (but allow state checkpoints)
+# Thoughts directory (but allow state checkpoints and plans)
 thoughts/*
 !thoughts/shared/
 thoughts/shared/*
 !thoughts/shared/state/
+!thoughts/shared/plans/
