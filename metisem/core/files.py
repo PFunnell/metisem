@@ -5,6 +5,7 @@ content hashes for cache invalidation.
 """
 
 import hashlib
+import re
 from pathlib import Path
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
@@ -23,22 +24,54 @@ def find_markdown_files(vault_path: str) -> List[Path]:
     return list(vault.rglob('*.md'))
 
 
-def read_file_text_and_hash(path: Path) -> Tuple[Optional[str], Optional[str]]:
+def read_file_text_and_hash(path: Path, use_summary: bool = False) -> Tuple[Optional[str], Optional[str]]:
     """Read file content and compute SHA256 hash.
 
     Args:
         path: Path to the file
+        use_summary: If True, extract only summary block; falls back to full content if no summary
 
     Returns:
         Tuple of (content, hash) or (None, None) on error
     """
     try:
         content = path.read_text(encoding='utf-8')
+
+        # Extract summary if requested
+        if use_summary:
+            summary = extract_summary(content)
+            if summary:
+                content = summary
+
         hasher = hashlib.sha256()
         hasher.update(content.encode('utf-8'))
         return content, hasher.hexdigest()
     except Exception:
         return None, None
+
+
+def extract_summary(content: str) -> Optional[str]:
+    """Extract auto-generated summary block from markdown content.
+
+    Looks for:
+    <!-- AUTO-GENERATED SUMMARY START -->
+    summary content here
+    <!-- AUTO-GENERATED SUMMARY END -->
+
+    Args:
+        content: Markdown file content
+
+    Returns:
+        Summary text if found, None otherwise
+    """
+    pattern = r'<!--\s*AUTO-GENERATED SUMMARY START\s*-->\s*(.*?)\s*<!--\s*AUTO-GENERATED SUMMARY END\s*-->'
+    match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+
+    if match:
+        summary = match.group(1).strip()
+        return summary if summary else None
+
+    return None
 
 
 def compute_file_hash(path: Path) -> Optional[str]:
