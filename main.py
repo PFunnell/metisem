@@ -28,6 +28,7 @@ from metisem.core.markers import (
     append_marker_block,
     get_marker_pattern
 )
+from metisem.core.run_logger import RunLogger
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +175,23 @@ def main() -> None:
     )
 
     vault = args.vault_path
+
+    # Initialize run logger
+    run_logger = RunLogger(vault, 'linker')
+    run_logger.set_parameters({
+        'similarity': args.similarity,
+        'min_links': args.min_links,
+        'max_links': args.max_links,
+        'batch_size': args.batch_size,
+        'model': args.model,
+        'clusters': args.clusters,
+        'force_embeddings': args.force_embeddings
+    })
+    run_logger.set_model_info(args.model)
+
     # deletion-only mode
     if args.delete_links and not args.apply_links and not args.force_embeddings:
+        run_logger.set_operation('delete')
         files = find_markdown_files(vault)
         removed = 0
         for f in files:
@@ -183,6 +199,9 @@ def main() -> None:
             if r == MODIFY_DELETED:
                 removed += 1
         logger.info(f"Removed link blocks from {removed}/{len(files)} files.")
+        run_logger.set_file_stats(total=len(files), modified=removed)
+        run_logger.set_link_stats(removed=removed)
+        run_logger.complete()
         return
 
     files = find_markdown_files(vault)
@@ -245,6 +264,7 @@ def main() -> None:
 
     if args.apply_links or args.delete_links:
         # Actually modify files
+        run_logger.set_operation('apply' if args.apply_links else 'delete')
         for f in files:
             to_add = links.get(Path(f), [])
             r = modify_markdown_file(Path(f), to_add, args.delete_links)
@@ -259,6 +279,7 @@ def main() -> None:
         )
     else:
         # Preview mode: report what would be done without modifying files
+        run_logger.set_operation('preview')
         for f in files:
             to_add = links.get(Path(f), [])
             if to_add:
@@ -268,6 +289,21 @@ def main() -> None:
             f"Preview: {modified} files would be modified, "
             f"{total_added} links would be added. Use --apply-links to modify files."
         )
+
+    # Log run metrics
+    run_logger.set_file_stats(
+        total=len(files),
+        modified=modified,
+        new=stats.get('new', 0),
+        unchanged=stats.get('unchanged', 0),
+        deleted=stats.get('deleted', 0)
+    )
+    run_logger.set_link_stats(added=total_added)
+    if errors > 0:
+        run_logger.add_error(f"{errors} files had errors during processing")
+        run_logger.complete(status='partial' if modified > 0 else 'error')
+    else:
+        run_logger.complete()
 
 if __name__ == '__main__':
     main()

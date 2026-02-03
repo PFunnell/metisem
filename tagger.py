@@ -21,6 +21,7 @@ from metisem.core.files import find_markdown_files
 from metisem.core.cache import generate_embeddings
 from metisem.core.embeddings import encode_texts
 from metisem.core.database import CacheDatabase
+from metisem.core.run_logger import RunLogger
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +188,8 @@ def load_and_embed_tags(
     Returns:
         Array of tag embeddings in original tag order
     """
-    cache_dir = Path(vault_path) / ".metisem_cache"
-    db = CacheDatabase(cache_dir / "cache.db")
+    cache_dir = Path(vault_path) / ".metisem"
+    db = CacheDatabase(cache_dir / "metisem.db")
 
     to_embed = []
     cached_embeddings = []
@@ -245,13 +246,27 @@ def main() -> None:
         format='%(levelname)s: %(message)s'
     )
 
+    # Initialize run logger
+    run_logger = RunLogger(args.vault_path, 'tagger')
+    run_logger.set_parameters({
+        'batch_size': args.batch_size,
+        'model': args.model,
+        'force_embeddings': args.force_embeddings,
+        'tags_file': args.tags_file
+    })
+    run_logger.set_model_info(args.model)
+
     files = find_markdown_files(args.vault_path)
     if args.remove_tags:
+        run_logger.set_operation('remove')
         removed = 0
         for f in tqdm(files, desc='Removing tags'):
             if remove_tags(f):
                 removed += 1
         logger.info(f"Removed tags from {removed}/{len(files)} files.")
+        run_logger.set_file_stats(total=len(files), modified=removed)
+        run_logger.set_tag_stats(removed=removed)
+        run_logger.complete()
         return
 
     if not args.tags_file:
@@ -283,11 +298,30 @@ def main() -> None:
     mapping = {docs[i]: list(tags.keys())[idx] for i, idx in enumerate(best)}
 
     if args.apply_tags:
+        run_logger.set_operation('apply')
         applied = 0
         for doc, tag in tqdm(mapping.items(), desc='Applying tags'):
             if add_tag(doc, tag):
                 applied += 1
         logger.info(f"Applied tags to {applied}/{len(mapping)} files.")
+        run_logger.set_file_stats(
+            total=len(files),
+            modified=applied,
+            new=stats.get('new', 0),
+            unchanged=stats.get('unchanged', 0),
+            deleted=stats.get('deleted', 0)
+        )
+        run_logger.set_tag_stats(applied=applied)
+        run_logger.complete()
+    else:
+        run_logger.set_operation('preview')
+        run_logger.set_file_stats(
+            total=len(files),
+            new=stats.get('new', 0),
+            unchanged=stats.get('unchanged', 0),
+            deleted=stats.get('deleted', 0)
+        )
+        run_logger.complete()
 
 if __name__ == '__main__':
     main()

@@ -20,6 +20,7 @@ from metisem.core.markers import (
     has_marker_block,
     remove_marker_block
 )
+from metisem.core.run_logger import RunLogger
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,18 @@ def main() -> None:
     total_files = len(files)
     logger.info(f"Found {total_files} markdown files in {args.vault_path}")
 
+    # Initialize run logger
+    run_logger = RunLogger(args.vault_path, 'summariser')
+    run_logger.set_parameters({
+        'model': args.model,
+        'max_summary_length': args.max_summary_length,
+        'max_files': args.max_files,
+        'ollama_host': OLLAMA_HOST
+    })
+    run_logger.set_model_info(args.model)
+
     if args.delete_summaries:
+        run_logger.set_operation('delete')
         logger.info("Removing old summaries...")
         removed = 0
         for f in tqdm(files, desc="Clearing"):
@@ -160,11 +172,16 @@ def main() -> None:
                 removed += 1
         logger.info(f"Removed summaries from {removed} files")
         if not args.apply_summaries:
+            run_logger.set_file_stats(total=total_files, modified=removed)
+            run_logger.set_summary_stats(removed=removed)
+            run_logger.complete()
             return
 
     if args.apply_summaries:
+        run_logger.set_operation('apply')
         logger.info("Generating and applying summaries...")
         successful = 0
+        errors = 0
         for f in tqdm(files, desc="Summarising"):
             try:
                 logger.debug(f"Processing: {f}")
@@ -181,10 +198,20 @@ def main() -> None:
                     logger.debug(f"Summary: {summary[:100]}...")
             except Exception as e:
                 logger.error(f"Error processing {f}: {e}")
+                errors += 1
+                run_logger.add_error(f"Error processing {f.name}: {str(e)}")
 
         logger.info(f"\nSummary Generation Complete:")
         logger.info(f"- Successfully processed: {successful}/{total_files} files")
         logger.info(f"- Failed/Skipped: {total_files - successful} files")
+
+        # Log metrics
+        run_logger.set_file_stats(total=total_files, modified=successful)
+        run_logger.set_summary_stats(added=successful)
+        if errors > 0:
+            run_logger.complete(status='partial' if successful > 0 else 'error')
+        else:
+            run_logger.complete()
 
 if __name__ == '__main__':
     main()
