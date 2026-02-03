@@ -41,6 +41,43 @@ class CacheDatabase:
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS run_logs (
+        run_id TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        tool_name TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        vault_path TEXT NOT NULL,
+
+        files_total INTEGER,
+        files_modified INTEGER,
+        files_new INTEGER,
+        files_unchanged INTEGER,
+        files_deleted INTEGER,
+
+        links_added INTEGER,
+        links_removed INTEGER,
+        tags_applied INTEGER,
+        tags_removed INTEGER,
+        summaries_added INTEGER,
+        summaries_removed INTEGER,
+
+        parameters TEXT,
+
+        duration_seconds REAL,
+        embedding_time_seconds REAL,
+        cache_hit_ratio REAL,
+
+        status TEXT,
+        error_count INTEGER,
+        error_message TEXT,
+
+        model_name TEXT,
+        embedding_dim INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_run_timestamp ON run_logs(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_run_tool ON run_logs(tool_name);
+    CREATE INDEX IF NOT EXISTS idx_run_vault ON run_logs(vault_path);
     """
 
     def __init__(self, db_path: Path):
@@ -230,3 +267,82 @@ class CacheDatabase:
             (key, value)
         )
         conn.commit()
+
+    def log_run(self, run_data: Dict[str, Any]) -> None:
+        """Log a tool execution run.
+
+        Args:
+            run_data: Dictionary containing run metadata and metrics
+        """
+        conn = self._get_connection()
+        conn.execute(
+            """
+            INSERT INTO run_logs (
+                run_id, timestamp, tool_name, operation, vault_path,
+                files_total, files_modified, files_new, files_unchanged, files_deleted,
+                links_added, links_removed, tags_applied, tags_removed,
+                summaries_added, summaries_removed,
+                parameters, duration_seconds, embedding_time_seconds, cache_hit_ratio,
+                status, error_count, error_message, model_name, embedding_dim
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            """,
+            (
+                run_data.get('run_id'),
+                run_data.get('timestamp'),
+                run_data.get('tool_name'),
+                run_data.get('operation'),
+                run_data.get('vault_path'),
+                run_data.get('files_total'),
+                run_data.get('files_modified'),
+                run_data.get('files_new'),
+                run_data.get('files_unchanged'),
+                run_data.get('files_deleted'),
+                run_data.get('links_added'),
+                run_data.get('links_removed'),
+                run_data.get('tags_applied'),
+                run_data.get('tags_removed'),
+                run_data.get('summaries_added'),
+                run_data.get('summaries_removed'),
+                run_data.get('parameters'),
+                run_data.get('duration_seconds'),
+                run_data.get('embedding_time_seconds'),
+                run_data.get('cache_hit_ratio'),
+                run_data.get('status'),
+                run_data.get('error_count'),
+                run_data.get('error_message'),
+                run_data.get('model_name'),
+                run_data.get('embedding_dim')
+            )
+        )
+        conn.commit()
+
+    def get_recent_runs(self, vault_path: Optional[str] = None, tool_name: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent run logs.
+
+        Args:
+            vault_path: Filter by vault path (optional)
+            tool_name: Filter by tool name (optional)
+            limit: Maximum number of runs to return
+
+        Returns:
+            List of run dictionaries
+        """
+        conn = self._get_connection()
+        query = "SELECT * FROM run_logs WHERE 1=1"
+        params = []
+
+        if vault_path:
+            query += " AND vault_path = ?"
+            params.append(vault_path)
+
+        if tool_name:
+            query += " AND tool_name = ?"
+            params.append(tool_name)
+
+        query += " ORDER BY timestamp DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = conn.execute(query, tuple(params))
+        return [dict(row) for row in cursor.fetchall()]
