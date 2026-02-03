@@ -69,7 +69,7 @@ Each tool is a standalone CLI script with its own argparse interface:
 
 ### Shared Patterns
 - All tools use `Path.rglob('*.md')` or `glob.glob` for file discovery
-- Embedding cache stored in `.metisem_cache/` using numpy `.npy`/`.npz` files
+- Embedding cache stored in `.metisem/` using numpy `.npy`/`.npz` files and SQLite database
 - Content modification uses HTML comment markers for section boundaries:
   - Links: `<!-- AUTO-GENERATED LINKS START -->` / `END`
   - Summaries: `<!-- AUTO-GENERATED SUMMARY START -->` / `END`
@@ -97,9 +97,26 @@ This project uses the Claude Code RPI Plus workflow:
 4. **Verify**: `/phase_complete` before commit
 5. **Commit**: `/gitsync` to push
 
+## Testing
+
+Automated test suite covers core functionality:
+
+```bash
+# Run all tests
+python scripts/test_run_logging.py
+
+# Tests cover:
+# - Linker functionality and logging
+# - Tagger functionality and logging
+# - Query utility and parameter analysis
+# - CSV export
+# - Cleanup utility
+```
+
+Test vault path configured in `.env` (TEST_VAULT_PATH) or `.claude/portable_config.local.yaml` (testing.vault_path).
+
 ## Constraints
 
-- No test suite currently exists - manual verification against a test vault required
 - Tools modify files in-place - always test on a backup vault first
 - Ollama must be running locally for summariser functionality
 
