@@ -74,6 +74,54 @@ def extract_summary(content: str) -> Optional[str]:
     return None
 
 
+def generate_title_from_summary(summary: str, max_length: int = 60) -> Optional[str]:
+    """Generate a filename-safe title from a summary.
+
+    Extracts the first sentence or key phrase, removes markdown formatting,
+    sanitises for filename usage, and limits length.
+
+    Args:
+        summary: Summary text to extract title from
+        max_length: Maximum length for generated title (default: 60)
+
+    Returns:
+        Cleaned title string, or None if summary is empty/invalid
+    """
+    if not summary or not summary.strip():
+        return None
+
+    # Remove markdown headers
+    text = re.sub(r'^#+\s+', '', summary, flags=re.MULTILINE)
+
+    # Remove markdown formatting (bold, italic, code)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Bold
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # Italic
+    text = re.sub(r'`([^`]+)`', r'\1', text)        # Inline code
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)      # Strikethrough
+
+    # Extract first sentence (up to . ! ? or newline)
+    sentences = re.split(r'[.!?\n]', text)
+    first_sentence = sentences[0].strip() if sentences else text.strip()
+
+    if not first_sentence:
+        return None
+
+    # Remove invalid filename characters
+    title = re.sub(r'[<>:"/\\|?*]', '', first_sentence)
+
+    # Collapse multiple spaces
+    title = re.sub(r'\s+', ' ', title)
+
+    # Trim to max length at word boundary
+    if len(title) > max_length:
+        title = title[:max_length].rsplit(' ', 1)[0]
+
+    # Remove trailing punctuation
+    title = title.rstrip('.,;:-')
+
+    return title.strip() if title.strip() else None
+
+
 def compute_file_hash(path: Path) -> Optional[str]:
     """Compute SHA256 hash of file content.
 
