@@ -4,169 +4,318 @@
 **Last Updated:** 2026-02-03
 **Status:** Active
 
-This document tracks all outstanding tasks, enhancements, and future work across the project.
+This document tracks tool development work. For corpus-specific tuning (validation sets, threshold optimisation), see [Implementation Guidance](#implementation-guidance-user-domain).
 
 ---
 
-## Priority 1: Immediate / High Value
-
-### Validation & Quality Assurance
-
-**Create labeled validation set**
-- Sample 100-200 files manually
-- Apply ground truth tags based on core topics
-- Store in `docs/validation/` with CSV format
-- Enable precision/recall measurement
-- **Rationale:** Currently optimizing blind without accuracy metrics
-- **Related:** Phases 1.8-1.10 critique
-
-**Compute precision/recall metrics**
-- Compare configurations:
-  - Full-text tagging @ 0.20 threshold
-  - Summary-based tagging @ 0.20 threshold
-  - Broad descriptors (Phase 1.8) vs narrow descriptors (Phase 1.9)
-- Calculate F1 scores
-- Identify optimal threshold per configuration
-- Document in `docs/research/validation_results.md`
-- **Blocks:** Future tag optimization decisions
-
-**False positive audit**
-- Sample 50 files tagged with each of top 5 tags
-- Manually verify tag appropriateness
-- Identify systematic misclassifications
-- Update tag descriptors or thresholds based on findings
-
-### Graph Visualization
-
-**Update graph.json for Phase 1.10 usage patterns**
-- Current ordering is Phase 1.9 (full-text usage)
-- Re-order legend based on summary-based tagging counts:
-  1. developer_tooling (3) → 20. ai_tooling_and_models (387)
-- Test visual hierarchy in Obsidian
-- Verify rare tags not obscured
-- **Files:** `D:\Obsidian\GPT\GPT2025-12-02\.obsidian\graph.json`
+## Priority 1: Core Tool Quality
 
 ### Documentation
 
-**Generate transcript for Phases 1.8-1.10**
-- Run: `powershell .\scripts\cc-transcript-latest.ps1`
-- Archive in `docs/transcripts/2026-02-03/`
-- Link from checkpoint files
-- **Purpose:** Session archival and knowledge transfer
+**README improvements**
+- Clear getting-started guide for new users
+- Example workflows for common use cases
+- Troubleshooting section for common issues
+- Screenshots/examples of output
+- **Rationale:** First-time user experience is critical for adoption
 
----
+**Configuration guide**
+- Document all CLI flags and their interactions
+- Explain threshold selection trade-offs (precision vs recall)
+- Tag descriptor authoring guidance
+- Model selection recommendations
+- **Blocks:** Users understanding how to tune for their vaults
 
-## Priority 2: Enhancement / Medium Value
+### Code Quality
 
-### Model Improvements
+**Expanded test suite (Phase 1.6)**
+- Unit tests for core modules (embeddings, cache, files, database)
+- Integration tests with synthetic fixture vault
+- Pytest configuration with coverage reporting
+- **Depends on:** Synthetic test fixtures (not user corpus)
+- **Current:** Manual test script only (`scripts/test_run_logging.py`)
 
-**Upgrade to Qwen2.5 7B for summarization**
-- Install: `ollama pull qwen2.5:7b` (~4.7GB)
-- Update summariser default model
-- Benchmark against mistral on sample files
-- Compare summary quality for technical content
-- Document results in `docs/research/qwen_vs_mistral_comparison.md`
-- **Trade-off:** 20-30% slower, better quality, 128K context vs 32K
-- **When:** If Mistral summaries show quality issues
+**CI/CD pipeline**
+- GitHub Actions workflow
+- Run tests on push/PR
+- Lint checking (ruff/flake8)
+- **Depends on:** Expanded test suite
 
-**Adaptive threshold calculation**
-- Analyze score distribution per tag
-- Calculate optimal threshold from percentiles (e.g., 75th)
-- Implement `--adaptive-threshold` flag in tagger
-- Compare fixed vs adaptive on validation set
-- **Expected:** Better balance between precision and recall
-
-**Per-tag thresholds**
-- Some tags more specific (automotive, neurodivergence)
-- Some tags more general (productivity, ethics_and_policy)
-- Calculate optimal threshold per tag from validation data
-- Store in tags.txt: `tag_name::threshold::description`
-- Update tagger to use per-tag thresholds
-- **Expected:** Reduce false positives on broad tags, improve recall on narrow tags
-
-### Tag System Improvements
-
-**Tag co-occurrence analysis**
-- Query database for frequently co-occurring tag pairs
-- Identify:
-  - Redundant tags (always occur together → merge)
-  - Semantic hierarchies (parent/child relationships)
-  - Mutually exclusive tags (never occur together → descriptor issue)
-- Visualize with network graph
-- Document in `docs/research/tag_cooccurrence.md`
-
-**Coverage gap analysis**
-- Sample 100 untagged files (743 files with 0 tags remain)
-- Manually identify core topics
-- Determine if missing tag categories needed
-- Or if threshold too strict / descriptors too narrow
-- Update tags.txt or thresholds based on findings
-
-**Tag clustering for auto-discovery**
-- Extract candidate tags from corpus via:
-  - TF-IDF on untagged files
-  - Topic modeling (LDA)
-  - Named entity recognition
-- Cluster similar candidate tags
-- Generate descriptors automatically
-- Human review before adding to tags.txt
-- **Goal:** Discover emergent topics not in initial 20 tags
-
-### Performance & Infrastructure
-
-**Embedding fine-tuning**
-- Create domain-specific training set from vault
-- Fine-tune sentence-transformers model on corpus
-- Compare domain-adapted vs generic model
-- Store in `models/` (gitignored)
-- Document in `docs/research/fine_tuning.md`
-- **Trade-off:** Better accuracy, slower cold start, corpus-specific
+### Performance
 
 **Incremental summary updates**
 - Track file modification times in database
-- Only re-summarize changed files
+- Only re-summarise changed files
 - Update summary cache incrementally
-- **Expected:** 10x faster re-summarization after initial run
-
-**Batch processing for cloud LLMs**
-- Group files into batches for API efficiency
-- Implement rate limiting for OpenAI/Anthropic APIs
-- Cost estimation before running
-- **Related:** Phase 1.5 cloud LLM integration (not yet implemented)
+- **Rationale:** Critical for usability - 4 hours for full re-run is prohibitive
+- **Expected:** 10x faster re-summarisation after initial run
 
 ---
 
-## Priority 3: Major Features / Low Urgency
+## Priority 2: Generalizable Features
 
-### From Enhancement Plan - Phase 1 Remaining
+### Threshold Mechanisms
+
+**Adaptive threshold calculation**
+- Analyse score distribution per tag automatically
+- Calculate threshold from percentiles (e.g., 75th percentile)
+- Implement `--adaptive-threshold` flag in tagger
+- **Rationale:** Removes need for manual threshold tuning
+- **Depends on:** None (works on any corpus)
+
+**Per-tag threshold support**
+- Extend tags.txt format: `tag_name::threshold::description`
+- Update tagger to use per-tag thresholds when specified
+- Default to global threshold when not specified
+- **Rationale:** Mechanism for users who want fine-grained control
+- **Depends on:** None (format extension)
+
+### Analysis Tooling
+
+**Tag co-occurrence analysis script**
+- Query database for frequently co-occurring tag pairs
+- Output: redundant pairs, hierarchies, mutual exclusions
+- Generate network graph visualisation
+- **Rationale:** Helps users refine their tag vocabularies
+- **Output:** `scripts/analyse_cooccurrence.py`
+
+**Coverage gap analysis script**
+- Sample untagged files
+- Show score distributions for each tag
+- Identify threshold sensitivity
+- **Rationale:** Helps users understand why files remain untagged
+- **Output:** `scripts/analyse_coverage.py`
+
+### Infrastructure
 
 **Hardware-aware model selection (Phase 1.4)**
 - Detect CUDA availability, VRAM, CPU cores
-- Recommend embedding model based on profile:
-  - CPU-only: `all-MiniLM-L6-v2` (384 dims)
-  - GPU limited VRAM: `all-mpnet-base-v2` (768 dims)
-  - GPU ample VRAM: larger models
+- Recommend embedding model based on hardware profile
 - Display trade-offs (speed vs semantic quality)
 - Allow manual override
-- **Status:** Currently using all-MiniLM-L6-v2 by default
+- **Depends on:** None
+- **Status:** Currently hardcoded to all-MiniLM-L6-v2
 
-**Cloud LLM integration for summarization (Phase 1.5)**
-- Abstract summarizer behind provider interface
-- Implement providers:
-  - `OllamaProvider` (existing, complete)
-  - `OpenAIProvider` (GPT-4o)
-  - `AnthropicProvider` (Claude Sonnet/Opus)
+**Cloud LLM integration for summarisation (Phase 1.5)**
+- Abstract summariser behind provider interface
+- Implement providers: Ollama (done), OpenAI, Anthropic
 - Config file for API keys and model selection
-- Graceful fallback chain (Ollama → cloud)
-- Cost estimation UI
+- Cost estimation before running
+- **Depends on:** None
 - **Status:** Only Ollama implemented
 
-**Expanded test suite (Phase 1.6)**
-- Unit tests for core modules
-- Integration tests with fixture vault
-- Pytest configuration
-- CI/CD pipeline (GitHub Actions)
-- **Current:** Only manual test script exists (`scripts/test_run_logging.py`)
+---
+
+## Priority 3: Major Features
+
+### Web UI (Phase 2)
+
+**FastAPI backend (Phase 2.1)**
+- REST API wrapping core functionality
+- Background job queue for long operations
+- WebSocket for real-time progress
+- **Depends on:** Core stability, expanded test suite
+
+**Simple web frontend (Phase 2.2)**
+- Minimal HTML/JS dashboard (no framework)
+- Vault selection, operation triggers, progress display
+- **Depends on:** FastAPI backend
+
+**Async processing (Phase 2.3)**
+- Background workers, chunked processing, cancellation
+- **Depends on:** FastAPI backend
+
+### Obsidian Plugin (Phase 3)
+
+**Plugin scaffold (Phase 3.1)**
+- Obsidian plugin boilerplate, settings, commands
+- **Depends on:** Core algorithms stabilised
+
+**Embedding engine with transformers.js (Phase 3.2)**
+- Port embedding logic to TypeScript
+- IndexedDB cache, Web Worker for non-blocking
+- **Depends on:** Plugin scaffold
+
+**Full feature port (Phases 3.3-3.6)**
+- Link generation, tag assignment, summarisation
+- Large vault support with chunked processing
+- **Depends on:** Embedding engine
+
+### Distribution (Phase 4)
+
+**UX refinement (Phase 4.1)**
+- Error handling, confirmation dialogs, undo support
+- **Depends on:** Plugin complete
+
+**Community plugin submission (Phase 4.3)**
+- Follow Obsidian guidelines, security review, submit
+- **Depends on:** UX refinement, documentation
+
+---
+
+## Priority 4: Research / Exploratory
+
+These are speculative features - may not be implemented.
+
+**Graph-based link recommendation**
+- Consider graph structure, not just pairwise similarity
+- Recommend bridges, close triangles
+- **Research question:** Does graph-aware linking improve vault navigation?
+
+**Semantic search interface**
+- Natural language query → find similar notes
+- Use existing embeddings
+- **Research question:** Is this valuable vs Obsidian's built-in search?
+
+**Tag hierarchies**
+- Parent/child relationships with inheritance
+- **Research question:** Do users want managed hierarchies or flat tags?
+
+**Active learning for tagging**
+- Present uncertain cases to user for labelling
+- Use labels to refine model/descriptors
+- **Research question:** Is the interaction overhead worthwhile?
+
+---
+
+## Implementation Guidance (User Domain)
+
+> **Note:** These are not tool development tasks. They are guidance for users tuning Metisem for their specific vaults. The tool provides mechanisms; users apply them to their corpora.
+
+### Validation Set Creation
+
+If you want to measure precision/recall for your vault:
+1. Sample 100-200 representative files
+2. Manually assign ground truth tags
+3. Store in CSV format: `file_path,tag1,tag2,...`
+4. Run tagger, compare output to ground truth
+5. Calculate precision/recall/F1
+
+**This is corpus-specific work** - your tags, your topics, your judgement of correctness.
+
+### Threshold Tuning
+
+1. Run tagger at various thresholds (0.15, 0.20, 0.25, 0.30)
+2. Sample tagged files, assess quality
+3. Use coverage gap analysis script to understand trade-offs
+4. Choose threshold balancing precision vs recall for your needs
+
+### Tag Vocabulary Refinement
+
+1. Run co-occurrence analysis
+2. Merge redundant tags (always co-occur)
+3. Split ambiguous tags (cover too much semantic space)
+4. Add missing categories (based on untagged file inspection)
+
+### Graph Configuration
+
+- Order tags in graph.json by rarity (rare first due to draw order)
+- Choose distinct colours for high-frequency tags
+- Re-order when tag distribution changes significantly
+
+---
+
+## Completed (For Reference)
+
+### Phase 1.1: Unified Core Module ✅
+- Created `metisem/core/` package
+- Modules: embeddings.py, cache.py, markers.py, files.py, database.py
+
+### Phase 1.2: Incremental Processing ✅
+- File metadata tracked in SQLite
+- Change detection: new, modified, deleted, unchanged
+
+### Phase 1.3: Multi-Tag Support ✅
+- `--max-tags`, `--tag-threshold` parameters
+- Threshold-filtered selection
+
+### Phase 1.7: Run Logging ✅
+- Database renamed, run_logs table, query utilities
+
+### Phase 1.8: Bug Fixes & Optimisation ✅
+- Fixed linker Path object mismatch
+- Fixed tagger duplicate tags bug
+- Coverage improved 25%→63%
+
+### Phase 1.9: Tag Consolidation ✅
+- Pruned tags 30→20
+- Refined AI tag descriptors
+
+### Phase 1.10: Summary-Based Tagging ✅
+- Summary extraction, --tag-summaries flag
+- 85.8% coverage, balanced distribution
+
+### Graph.json Update ✅ (2026-02-03)
+- Reordered by summary-based distribution (rare first)
+- Removed superfluous 'tag:#' prefix from queries
+
+---
+
+## Decision Log
+
+### Why summary-based tagging?
+- Full-text embeddings match vocabulary frequency, not topical centrality
+- Summaries distill core topics, filtering incidental mentions
+- Evidence: ai_tooling_and_models dropped from 40% to 8.4%
+
+### Why 20 tags instead of 30?
+- 30 tags exceeded useful colour differentiation in graph
+- Removed 8 tags with <10 uses (2.5% of applications)
+
+### Why validation/labelling is not Priority 1?
+- Metisem is a generic tool for any markdown vault
+- Validation sets are corpus-specific (your topics, your tags)
+- Human labelling is implementation work, not tool development
+- Tool provides mechanisms; users tune for their corpora
+
+---
+
+## Dependency Graph
+
+```
+Documentation ──────────────────────────────────────────┐
+     │                                                   │
+     v                                                   v
+Test Suite ──────> CI/CD                            Users can
+     │                                              tune their
+     v                                              vaults
+Core Stability ─────────────────────┐
+     │                              │
+     ├──> Adaptive Thresholds       │
+     ├──> Per-tag Thresholds        │
+     ├──> Analysis Scripts          │
+     │                              │
+     v                              v
+Hardware Selection           Cloud LLM Integration
+     │                              │
+     └──────────┬───────────────────┘
+                │
+                v
+         Web UI (Phase 2)
+                │
+                v
+      Obsidian Plugin (Phase 3)
+                │
+                v
+       Distribution (Phase 4)
+```
+
+---
+
+## Notes
+
+- Priority 1 items improve tool quality for all users
+- Priority 2 items add generalizable capabilities
+- Priority 3-4 require significant development effort
+- Implementation guidance is documentation, not backlog items
+
+---
+
+## Last Review
+
+**Date:** 2026-02-03
+**Reviewer:** Claude Opus 4.5
+**Changes:** Restructured to separate tool dev from user implementation; added dependency graph; demoted corpus-specific validation work to guidance section
 
 ### From Enhancement Plan - Phase 2: Python Web UI
 
