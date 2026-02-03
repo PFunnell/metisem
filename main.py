@@ -207,6 +207,18 @@ def main() -> None:
         help='Sentence Transformer model name'
     )
     p.add_argument(
+        '--title-weight', type=float, default=0.0,
+        help='Weight for title similarity (filename stems)'
+    )
+    p.add_argument(
+        '--content-weight', type=float, default=1.0,
+        help='Weight for content similarity'
+    )
+    p.add_argument(
+        '--summary-weight', type=float, default=0.0,
+        help='Weight for summary similarity (requires summaries)'
+    )
+    p.add_argument(
         '--verbose', action='store_true',
         help='Enable verbose logging (DEBUG level)'
     )
@@ -230,7 +242,10 @@ def main() -> None:
         'batch_size': args.batch_size,
         'model': args.model,
         'clusters': args.clusters,
-        'force_embeddings': args.force_embeddings
+        'force_embeddings': args.force_embeddings,
+        'title_weight': args.title_weight,
+        'content_weight': args.content_weight,
+        'summary_weight': args.summary_weight
     })
     run_logger.set_model_info(args.model)
 
@@ -254,6 +269,8 @@ def main() -> None:
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = SentenceTransformer(args.model, device=device)
+
+    # Generate content embeddings (always needed)
     emb, valid, stats = generate_embeddings(
         files,
         model,
@@ -270,14 +287,61 @@ def main() -> None:
             f"Change detection: {stats['new']} new, {stats['modified']} modified, "
             f"{stats['deleted']} deleted, {stats['unchanged']} unchanged"
         )
+
+    # Generate title embeddings if weight > 0
+    title_emb = None
+    if args.title_weight > 0 and len(valid) > 0:
+        logger.info("Generating title embeddings...")
+        titles = [p.stem for p in valid]
+        title_emb = model.encode(titles, batch_size=args.batch_size, show_progress_bar=False)
+        title_emb = np.array(title_emb)
+
+    # Generate summary embeddings if weight > 0
+    summary_emb = None
+    if args.summary_weight > 0 and len(valid) > 0:
+        logger.info("Generating summary embeddings...")
+        summary_emb_result, summary_valid, _ = generate_embeddings(
+            valid,
+            model,
+            args.model,
+            args.batch_size,
+            device,
+            vault,
+            force=True,  # Always regenerate for summaries (different content)
+            use_summaries=True
+        )
+        # Ensure alignment with content embeddings
+        if len(summary_valid) == len(valid):
+            summary_emb = summary_emb_result
+        else:
+            logger.warning(
+                f"Summary embedding count ({len(summary_valid)}) differs from "
+                f"content ({len(valid)}). Falling back to content-only similarity."
+            )
+            args.summary_weight = 0.0
+
     if args.clusters and len(valid) >= args.clusters:
         km = KMeans(n_clusters=args.clusters, random_state=0).fit(emb)
         labels = km.labels_
     else:
         labels = None
 
+    # Log weight configuration if non-default
+    if args.title_weight > 0 or args.summary_weight > 0:
+        logger.info(
+            f"Similarity weights: title={args.title_weight:.2f}, "
+            f"content={args.content_weight:.2f}, summary={args.summary_weight:.2f}"
+        )
+
     logger.info(f"Computing similarity matrix ({len(valid)} files)...")
-    sim = calculate_similarity(emb)
+    sim = calculate_similarity(
+        emb,
+        title_embeddings=title_emb,
+        summary_embeddings=summary_emb,
+        title_weight=args.title_weight,
+        content_weight=args.content_weight,
+        summary_weight=args.summary_weight
+    )
     total_pairs = sim.size
     above = np.sum(sim >= args.similarity)
     logger.info(f"Threshold={args.similarity}: {above}/{total_pairs} pairs ({above/total_pairs:.2%}) above threshold")
