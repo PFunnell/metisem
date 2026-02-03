@@ -266,8 +266,8 @@ def main() -> None:
         # Actually modify files
         run_logger.set_operation('apply' if args.apply_links else 'delete')
         for f in files:
-            to_add = links.get(Path(f), [])
-            r = modify_markdown_file(Path(f), to_add, args.delete_links)
+            to_add = links.get(f, [])
+            r = modify_markdown_file(f, to_add, args.delete_links)
             if r > 0:
                 total_added += r
                 modified += 1
@@ -281,7 +281,7 @@ def main() -> None:
         # Preview mode: report what would be done without modifying files
         run_logger.set_operation('preview')
         for f in files:
-            to_add = links.get(Path(f), [])
+            to_add = links.get(f, [])
             if to_add:
                 total_added += len(to_add)
                 modified += 1
