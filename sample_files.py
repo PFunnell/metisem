@@ -2,7 +2,7 @@ import sqlite3
 import os
 from pathlib import Path
 
-db_path = Path(r"D:\Obsidian\GPT\GPT2025-12-02\.metisem_cache\cache.db")
+db_path = Path(r"D:\Obsidian\GPT\GPT2025-12-02\.metisem\metisem.db")
 conn = sqlite3.connect(db_path)
 cursor = conn.execute('SELECT file_path FROM file_metadata ORDER BY RANDOM() LIMIT 40')
 

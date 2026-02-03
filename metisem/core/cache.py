@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class EmbeddingCache:
     """Manages embedding cache for a vault and model combination."""
 
-    def __init__(self, vault_path: str, model_name: str, cache_dir: str = ".metisem_cache"):
+    def __init__(self, vault_path: str, model_name: str, cache_dir: str = ".metisem"):
         """Initialize cache manager.
 
         Args:
@@ -36,7 +36,7 @@ class EmbeddingCache:
         self._data: Dict[Path, Dict[str, Any]] = {}
 
         # Initialize SQLite database
-        self.db = CacheDatabase(self.cache_dir / "cache.db")
+        self.db = CacheDatabase(self.cache_dir / "metisem.db")
         self._migrate_if_needed()
 
     def _get_cache_path(self) -> Path:
@@ -120,7 +120,7 @@ class EmbeddingCache:
     def _migrate_if_needed(self) -> None:
         """Auto-migrate legacy .npz cache to SQLite metadata."""
         # Check if we need migration
-        db_exists = (self.cache_dir / "cache.db").exists()
+        db_exists = (self.cache_dir / "metisem.db").exists()
         npz_exists = self.cache_file.exists()
 
         if db_exists or not npz_exists:
