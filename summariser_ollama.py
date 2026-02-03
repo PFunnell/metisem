@@ -18,7 +18,8 @@ from metisem.core.markers import (
     SUMMARY_START,
     SUMMARY_END,
     has_marker_block,
-    remove_marker_block
+    remove_marker_block,
+    replace_marker_block
 )
 from metisem.core.run_logger import RunLogger
 
@@ -48,14 +49,23 @@ def remove_summaries(filepath: Path) -> bool:
         return False
 
 def insert_summary(filepath: Path, summary: str) -> None:
-    """Prepend the generated summary block above the rest of the file."""
+    """Insert or replace the summary block at the top of the file."""
     try:
         txt = filepath.read_text(encoding='utf-8')
-        block = f"{SUMMARY_START}\n{summary.strip()}\n{SUMMARY_END}\n\n"
-        filepath.write_text(block + txt, encoding='utf-8')
+        summary_content = summary.strip()
+
+        if has_marker_block(txt, SUMMARY_START, SUMMARY_END):
+            # Replace existing summary to prevent duplicates
+            new_txt = replace_marker_block(txt, SUMMARY_START, SUMMARY_END, summary_content)
+            filepath.write_text(new_txt, encoding='utf-8')
+        else:
+            # No existing summary - prepend new block
+            block = f"{SUMMARY_START}\n{summary_content}\n{SUMMARY_END}\n\n"
+            filepath.write_text(block + txt, encoding='utf-8')
+
         # Verify summary was written
-        new_txt = filepath.read_text(encoding='utf-8')
-        if not has_marker_block(new_txt, SUMMARY_START, SUMMARY_END):
+        final_txt = filepath.read_text(encoding='utf-8')
+        if not has_marker_block(final_txt, SUMMARY_START, SUMMARY_END):
             logger.warning(f"Warning: Summary may not have been written to {filepath}")
     except Exception as e:
         logger.error(f"Error inserting summary into {filepath}: {e}")

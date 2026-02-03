@@ -134,8 +134,8 @@ def main() -> None:
         help='Minimum weighted similarity threshold for linking'
     )
     p.add_argument(
-        '--min-links', type=int, default=0,
-        help='Minimum number of links to force (fallback); 0 for strict threshold'
+        '--min-links', type=int, default=1,
+        help='Minimum number of links per file (fallback if threshold not met); 0 for strict threshold only'
     )
     p.add_argument(
         '--max-links', type=int, default=9,
