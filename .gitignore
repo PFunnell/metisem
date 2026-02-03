@@ -44,4 +44,9 @@ credentials/
 # Private documentation (interview-sensitive)
 docs/transcripts/
 docs/research/
-thoughts/
+
+# Thoughts directory (but allow state checkpoints)
+thoughts/*
+!thoughts/shared/
+thoughts/shared/*
+!thoughts/shared/state/
