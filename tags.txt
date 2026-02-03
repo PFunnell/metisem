@@ -1,15 +1,20 @@
-local_government::Topics related to city councils, county administration, public services, local regulations, and municipal operations.
-social_care::The services provided by a local authority to provide care for vulnerable children and adults.
-AI_and_automation::Discussions about artificial intelligence techniques, machine learning models, automation processes, algorithms, and their implementation in various systems.
-data_platforms::Focus on databases, data lakes, data warehouses, data pipelines, ETL processes, data infrastructure, and related technologies like Spark or Kafka.
-cloud_computing::Azure, AWS Amazon Web Services, GCP Google Cloud Platform
-user_experience::Topics concerning usability, user interface design, interaction design, user research, accessibility, and overall user satisfaction with products or services.
-ethics_and_policy::Discussions on ethical implications, bias in AI, data privacy, regulations (like GDPR), responsible technology development, and policy making related to technology.
-neurodivergence::Conversations about neurodevelopmental conditions like ADHD, autism, dyslexia, cognitive differences, accessibility needs, and related support strategies.
-education::Matters related to learning, teaching methods, educational technology (EdTech), curriculum development, academic institutions, and skill acquisition.
-productivity::Techniques, tools, software, and strategies for improving efficiency, time management, workflow optimization, and getting things done.
-personal_insight::Reflections, self-analysis, personal thoughts, conclusions drawn from individual experience, life lessons, and subjective viewpoints.
-funding_and_impact::Topics concerning securing funding, grants, donations, measuring social or business impact, non-profit operations, and venture capital.
-arts_and_culture::Exploration of the relationship between creative arts (music, visual arts, literature).
-philosophy_and_congnition::Theory of mind, religion, cognitive processes, perception, emotion, and brain function.
-system_design::Discussions on designing complex systems, software architecture, distributed systems, scalability, reliability, APIs, microservices, and architectural patterns.
+local_government::UK local authorities, county councils, city councils, Powys, service delivery, council operations, procurement processes, committee papers, day-to-day governance, officer reports.
+social_care::Social services, vulnerable children and adults, safeguarding, care assessments, adult social care, children's services, care pathways, local authority care provision.
+AI_and_automation::Artificial intelligence concepts, machine learning, neural networks, deep learning, automation workflows, autonomous agents, AI ethics debates, algorithmic systems, model training, inference.
+data_platforms::Databases SQL and NoSQL, data pipelines, ETL ELT, analytics platforms, data engineering, warehousing, lakehouses, reporting systems, Power BI, Fabric, metadata and tagging.
+cloud_computing::Azure, AWS Amazon Web Services, Google Cloud Platform GCP, SaaS, PaaS, IaaS, serverless, storage accounts, functions, containers, DevOps pipelines.
+ethics_and_policy::AI governance frameworks, GDPR data protection, auditability, algorithmic bias, transparency requirements, risk management, public sector regulation, equality impact assessments.
+neurodivergence::ADHD, autism, dyslexia, personal experience, cognitive differences, executive function challenges, sensory processing, coping strategies, medication, lived experience.
+productivity::Workflow optimisation, note-taking systems, Obsidian, task management, personal automation scripts, knowledge management, organisation tools, GTD, second brain.
+personal_insight::Reflections on career, philosophy, motivation, value judgements, self-analysis, journaling, life decisions, personal growth.
+arts_and_culture::Music playlists, literature, creative arts, cultural events, aesthetic discussion, media analysis, films, books, artistic expression.
+politics::Political systems, UK politics, governance debates, policy direction, public administration, elections, civic issues, democracy, parliament.
+automotive::Vehicles, car models BMW E46 E39, Lexus RX400h, maintenance, driving, EVs hybrids, ownership decisions, repairs, MOT, servicing.
+context_engineering::Prompt design techniques, context window management, PCES specification, token budgets, offloading strategies, rehydration patterns, artefact discipline, system prompts, few-shot examples.
+ai_tooling_and_models::ChatGPT, Claude, Copilot, Gemini, Azure OpenAI, Ollama, Anthropic API, OpenAI API, model comparisons, benchmarking results, API integration, token costs, model selection.
+public_sector_digital::Digital transformation strategy, Welsh Government digital, service redesign, GovTech, digital policy frameworks, automation business cases, council modernisation, digital inclusion strategy.
+career_and_applications::CV writing, cover letters, interview preparation, job applications, role analysis, LinkedIn, portfolio building, professional positioning.
+research_methods::Thematic analysis, qualitative research, Human Learning Systems HLS, Participatory Action Research PAR, Labovian analysis, corpus analysis, evaluation frameworks, benchmarking methods.
+developer_tooling::Git, GitHub, VS Code, CI/CD pipelines, testing frameworks, schema design, repository structure, code organisation, versioning, automation scripts.
+product_ecosystems::Microsoft 365, Power Platform, SharePoint, Teams, Google Workspace, GitHub platform features, SaaS integrations, platform administration.
+social_impact_and_inclusion::Digital inclusion policy, accessibility standards, WCAG, equality impact assessments, inclusive service design, community outcomes, public sector equality duty.
