@@ -9,7 +9,8 @@ Compatible with Obsidian, Logseq, and other markdown-based knowledge bases.
 
 - **Semantic linking** between related notes (Sentence Transformers)
 - **Auto-tagging** based on custom tag definitions
-- **Summarization** via Ollama-served local LLMs
+- **Summarisation** via Ollama-served local LLMs
+- **Title fixing** for files with generic names using summaries
 
 ## Commands
 
@@ -26,9 +27,14 @@ python main.py /path/to/vault --delete-links
 
 # Rebuild embeddings from scratch
 python main.py /path/to/vault --apply-links --force-embeddings
+
+# Multi-source linking: weight title, content, and summary similarity
+python main.py /path/to/vault --title-weight 0.2 --content-weight 0.5 --summary-weight 0.3
 ```
 
 Key flags: `--similarity` (threshold, default 0.6), `--min-links`, `--max-links` (default 9), `--model` (Sentence Transformer), `--clusters` (KMeans clustering)
+
+Multi-source linking: `--title-weight`, `--content-weight` (default 1.0), `--summary-weight`. Weights are normalised, so `2:1:1` and `0.5:0.25:0.25` produce equivalent results.
 
 ### Auto Tagger
 ```bash
@@ -56,16 +62,32 @@ python summariser_ollama.py /path/to/vault --delete-summaries
 python summariser_ollama.py /path/to/vault --apply-summaries --model mistral
 ```
 
+### Title Fixer
+```bash
+# Preview proposed renames (requires summaries)
+python title_fixer.py /path/to/vault
+
+# Apply renames to files
+python title_fixer.py /path/to/vault --apply-fixes
+
+# Custom pattern and title length
+python title_fixer.py /path/to/vault --title-pattern "^Draft.*" --max-length 80
+```
+
+Renames files with generic titles (e.g., "New Chat", "Untitled") using descriptive titles extracted from summary blocks. After renaming, run `--delete-links` and re-link to update connections.
+
 ## Architecture
 
-### Three Independent Tools
+### Four Independent Tools
 Each tool is a standalone CLI script with its own argparse interface:
 
-1. **main.py** - Semantic linker using cosine similarity on Sentence Transformer embeddings. Inserts `## Related Notes` sections wrapped in HTML comment markers.
+1. **main.py** - Semantic linker using cosine similarity on Sentence Transformer embeddings. Supports multi-source linking (title, content, summary) with configurable weights. Inserts `## Related Notes` sections wrapped in HTML comment markers.
 
 2. **tagger.py** - Matches note content to tag descriptions via embedding similarity. Modifies YAML front matter.
 
 3. **summariser_ollama.py** - Calls local Ollama API (`localhost:11434`) to generate summaries. Prepends summary blocks to files.
+
+4. **title_fixer.py** - Renames files with generic titles using descriptive names extracted from summary blocks. Includes conflict detection and preview mode.
 
 ### Shared Patterns
 - All tools use `Path.rglob('*.md')` or `glob.glob` for file discovery
