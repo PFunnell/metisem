@@ -178,7 +178,8 @@ def generate_embeddings(
     batch_size: int,
     device: str,
     vault_path: str,
-    force: bool = False
+    force: bool = False,
+    use_summaries: bool = False
 ) -> Tuple[np.ndarray, List[Path], Dict[str, int]]:
     """Generate embeddings for files using cache with incremental processing.
 
@@ -190,6 +191,7 @@ def generate_embeddings(
         device: Device to use ('cpu' or 'cuda')
         vault_path: Path to the vault (for cache location)
         force: If True, ignore cache and regenerate all embeddings
+        use_summaries: If True, extract and embed summary blocks instead of full content
 
     Returns:
         Tuple of (embeddings array, valid file paths, change stats dict)
@@ -232,7 +234,7 @@ def generate_embeddings(
     if force:
         # Force mode: embed all files
         for path in file_paths:
-            content, file_hash = read_file_text_and_hash(path)
+            content, file_hash = read_file_text_and_hash(path, use_summary=use_summaries)
             if file_hash:
                 file_hashes[path] = file_hash
                 to_embed.append((path, content))
@@ -244,7 +246,7 @@ def generate_embeddings(
                 embeddings_map[path] = cached
 
         for path in changes.new_files + changes.modified_files:
-            content, file_hash = read_file_text_and_hash(path)
+            content, file_hash = read_file_text_and_hash(path, use_summary=use_summaries)
             if file_hash:
                 file_hashes[path] = file_hash
                 to_embed.append((path, content))

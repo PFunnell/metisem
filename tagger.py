@@ -124,6 +124,24 @@ def add_tag(path: Path, tag: str) -> bool:
         lines = []
         rest = text
 
+    # First pass: check if tag already exists
+    in_tags_section = False
+    tag_exists = False
+    for line in lines:
+        if re.match(rf'^\s*{TAGS_KEY}\s*:\s*$', line):
+            in_tags_section = True
+        elif in_tags_section:
+            if re.match(r'^\s*-\s+\S+', line):
+                if line.strip() == f'- {tag}':
+                    tag_exists = True
+                    break
+            else:
+                in_tags_section = False
+
+    if tag_exists:
+        return False  # Tag already exists, don't add duplicate
+
+    # Second pass: add the tag
     new_lines = []
     saw_tags = False
     inserted = False
@@ -136,12 +154,9 @@ def add_tag(path: Path, tag: str) -> bool:
             new_lines.append(f'- {tag}')
             inserted = True
         elif saw_tags:
-            # we already inserted, now copy existing list items
+            # Copy existing list items (we already checked for duplicates above)
             if re.match(r'^\s*-\s+\S+', line):
-                # skip duplicates
-                if line.strip() == f'- {tag}':
-                    continue
-                new_lines.append(line)
+                pass  # Already appended above
             else:
                 saw_tags = False
 
@@ -236,6 +251,9 @@ def main() -> None:
     p.add_argument('--batch-size', type=int, default=32)
     p.add_argument('--force-embeddings', action='store_true')
     p.add_argument('--model', default='all-MiniLM-L6-v2')
+    p.add_argument('--tag-threshold', type=float, default=0.4, help='Minimum similarity to apply a tag (default: 0.4)')
+    p.add_argument('--max-tags', type=int, default=3, help='Maximum tags per note (default: 3)')
+    p.add_argument('--tag-summaries', action='store_true', help='Tag based on summary blocks instead of full content (requires summaries to be generated first)')
     p.add_argument('--verbose', action='store_true', help='Enable verbose logging (DEBUG level)')
     args = p.parse_args()
 
@@ -252,7 +270,10 @@ def main() -> None:
         'batch_size': args.batch_size,
         'model': args.model,
         'force_embeddings': args.force_embeddings,
-        'tags_file': args.tags_file
+        'tags_file': args.tags_file,
+        'tag_threshold': args.tag_threshold,
+        'max_tags': args.max_tags,
+        'tag_summaries': args.tag_summaries
     })
     run_logger.set_model_info(args.model)
 
@@ -276,9 +297,12 @@ def main() -> None:
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = SentenceTransformer(args.model, device=device)
 
+    if args.tag_summaries:
+        logger.info("Tag mode: Using summary blocks instead of full content")
+
     emb_docs, docs, stats = generate_embeddings(
         files, model, args.model, args.batch_size, device,
-        args.vault_path, args.force_embeddings
+        args.vault_path, args.force_embeddings, args.tag_summaries
     )
 
     # Log file embedding stats
@@ -294,16 +318,49 @@ def main() -> None:
     )
 
     sims = cosine_similarity(emb_docs, emb_tags)
-    best = sims.argmax(axis=1)
-    mapping = {docs[i]: list(tags.keys())[idx] for i, idx in enumerate(best)}
+
+    # Find tags above threshold for each document (up to max_tags)
+    tag_names = list(tags.keys())
+    mapping = {}
+
+    for i, doc in enumerate(docs):
+        scores = sims[i]
+        # Get all tags above threshold
+        candidates = [(j, scores[j]) for j in range(len(scores)) if scores[j] >= args.tag_threshold]
+        # Sort by score descending
+        candidates.sort(key=lambda x: -x[1])
+        # Take top max_tags
+        selected = [tag_names[idx] for idx, _ in candidates[:args.max_tags]]
+        if selected:
+            mapping[doc] = selected
+
+    # Log tag assignment statistics
+    tag_counts = {}
+    for tag_list in mapping.values():
+        count = len(tag_list)
+        tag_counts[count] = tag_counts.get(count, 0) + 1
+
+    logger.info(f"Tag assignment: {len(mapping)}/{len(docs)} files above threshold")
+    logger.info("Tags per file distribution:")
+    for count in range(1, args.max_tags + 1):
+        num = tag_counts.get(count, 0)
+        if num > 0:
+            logger.info(f"  {num} files with {count} tag(s)")
+    no_tags = len(docs) - len(mapping)
+    if no_tags > 0:
+        logger.info(f"  {no_tags} files with 0 tags (none above threshold)")
 
     if args.apply_tags:
         run_logger.set_operation('apply')
         applied = 0
-        for doc, tag in tqdm(mapping.items(), desc='Applying tags'):
-            if add_tag(doc, tag):
+        total_tags = 0
+        for doc, tag_list in tqdm(mapping.items(), desc='Applying tags'):
+            for tag in tag_list:
+                if add_tag(doc, tag):
+                    total_tags += 1
+            if tag_list:
                 applied += 1
-        logger.info(f"Applied tags to {applied}/{len(mapping)} files.")
+        logger.info(f"Applied {total_tags} tags to {applied}/{len(mapping)} files.")
         run_logger.set_file_stats(
             total=len(files),
             modified=applied,
@@ -311,7 +368,7 @@ def main() -> None:
             unchanged=stats.get('unchanged', 0),
             deleted=stats.get('deleted', 0)
         )
-        run_logger.set_tag_stats(applied=applied)
+        run_logger.set_tag_stats(applied=total_tags)
         run_logger.complete()
     else:
         run_logger.set_operation('preview')
