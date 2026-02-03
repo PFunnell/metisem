@@ -151,6 +151,43 @@ This document tracks tool development work. For corpus-specific tuning (validati
 - Follow Obsidian guidelines, security review, submit
 - **Depends on:** UX refinement, documentation
 
+### Stand-alone 3D Graph Visualisation (Phase 5)
+
+Interactive 3D graph viewer independent of Obsidian, with flythrough recording/scripting capability.
+
+**Core requirements**
+- Force-directed 3D graph layout from vault link structure
+- Camera controls: orbit, pan, zoom, fly
+- Flythrough scripting: define camera path with keyframes (position, focal point, timing)
+- Recording: export to video (WebM/MP4) or image sequence
+
+**Python implementation option**
+- **[PyVista](https://pyvista.org/)** - 3D visualisation with `orbit_on_path()`, `fly_to()`, GIF/video export
+- Camera path as `(n, 3, 3)` ndarray (position, focal point, viewup per keyframe)
+- [Orbiting documentation](https://docs.pyvista.org/examples/02-plot/orbit.html)
+- **[Mayavi](https://docs.enthought.com/mayavi/mayavi/)** - VTK-based, camera functions (move, pitch, roll, yaw), `start_recording()`/`stop_recording()`
+- **Trade-off:** PyVista simpler API; Mayavi more powerful but heavier
+
+**Next.js implementation option**
+- **[3d-force-graph](https://github.com/vasturiano/3d-force-graph)** - Purpose-built for graph viz, ThreeJS/WebGL
+  - `cameraPosition(x, y, z, lookAt, transitionMs)` for animated camera moves
+  - Camera modes: trackball, orbit, fly
+  - [React bindings](https://github.com/vasturiano/react-force-graph) available
+  - [Demo/examples](https://vasturiano.github.io/3d-force-graph/)
+- **[react-three-fiber](https://docs.pmnd.rs/react-three-fiber/)** + **[drei](https://github.com/pmndrs/drei)** for custom 3D
+  - CameraControls component for interactive navigation
+  - [react-three-next starter](https://github.com/pmndrs/react-three-next) for Next.js integration
+- **[CCapture.js](https://github.com/spite/ccapture.js)** for video recording
+  - Fixed framerate capture (30/60fps regardless of render time)
+  - WebM export (Chrome), image sequences for ffmpeg
+  - [Examples](https://andr-ew.github.io/ccapture.js-examples/)
+
+**Recommended approach**
+- Start with 3d-force-graph (graph-specific, good camera API)
+- Add CCapture.js for recording
+- Scripting layer: JSON format for camera keyframes with easing
+- **Depends on:** Link data export from core (graph structure as JSON)
+
 ---
 
 ## Priority 4: Research / Exploratory
@@ -290,14 +327,14 @@ Hardware Selection           Cloud LLM Integration
      │                              │
      └──────────┬───────────────────┘
                 │
-                v
-         Web UI (Phase 2)
-                │
-                v
-      Obsidian Plugin (Phase 3)
-                │
-                v
-       Distribution (Phase 4)
+      ┌─────────┼─────────┐
+      │         │         │
+      v         v         v
+  Web UI    Plugin    3D Graph
+ (Phase 2) (Phase 3) (Phase 5)
+      │         │
+      v         v
+   Distribution (Phase 4)
 ```
 
 ---
@@ -315,101 +352,7 @@ Hardware Selection           Cloud LLM Integration
 
 **Date:** 2026-02-03
 **Reviewer:** Claude Opus 4.5
-**Changes:** Restructured to separate tool dev from user implementation; added dependency graph; demoted corpus-specific validation work to guidance section
-
-### From Enhancement Plan - Phase 2: Python Web UI
-
-**FastAPI backend (Phase 2.1)**
-- REST API wrapping core functionality
-- Endpoints:
-  - `POST /api/links/generate`
-  - `POST /api/tags/apply`
-  - `POST /api/summaries/generate`
-  - `GET /api/status` (job progress)
-  - `GET /api/settings`, `PUT /api/settings`
-- Background job queue for long operations
-- WebSocket for real-time progress updates
-
-**Simple web frontend (Phase 2.2)**
-- Minimal HTML/JS dashboard (no framework)
-- Vault selection
-- Operation triggers with progress bars
-- Settings editor
-- Results preview
-
-**Async processing (Phase 2.3)**
-- Background workers for embedding generation
-- Chunked processing for large vaults
-- Cancellation support
-
-**Verification criteria:**
-- Web UI can trigger all operations
-- Progress updates display in real-time
-- Large vault (2000+ notes) processes without timeout
-- Settings persist across sessions
-
-### From Enhancement Plan - Phase 3: Obsidian Plugin
-
-**Plugin scaffold (Phase 3.1)**
-- Obsidian plugin boilerplate
-- Settings tab registration
-- Commands registration
-- Ribbon icons
-
-**Embedding engine with transformers.js (Phase 3.2)**
-- Port embedding logic to TypeScript
-- Use transformers.js with `all-MiniLM-L6-v2` ONNX model
-- IndexedDB cache for embeddings
-- Web Worker for non-blocking embedding
-
-**Link generation (Phase 3.3)**
-- Port similarity calculation to TypeScript
-- Port two-phase link finding algorithm
-- Markdown modification via Obsidian API
-
-**Tag assignment (Phase 3.4)**
-- Port tag embedding and matching to TypeScript
-- YAML front matter modification via Obsidian API
-- Preserve manual tags option
-
-**Summarization (Phase 3.5)**
-- Provider abstraction (same as Python)
-- Ollama provider (local HTTP)
-- OpenAI provider
-- Anthropic provider
-- Settings for API keys
-
-**Large vault support (Phase 3.6)**
-- Chunked processing with progress modal
-- Incremental updates (only changed files)
-- Background processing via Web Workers
-- Notice API for progress feedback
-
-**Verification criteria:**
-- Plugin installs in Obsidian
-- All three operations work on test vault
-- Settings persist
-- Large vault handles gracefully
-- No UI freezing during processing
-
-### From Enhancement Plan - Phase 4: Distribution
-
-**UX refinement (Phase 4.1)**
-- Error handling with user-friendly messages
-- Confirmation dialogs for destructive operations
-- Undo support (backup before modification)
-- Keyboard shortcuts
-
-**Documentation (Phase 4.2)**
-- README with screenshots
-- Configuration guide
-- Troubleshooting FAQ
-
-**Community plugin requirements (Phase 4.3)**
-- Follow Obsidian plugin guidelines
-- Security review
-- License compliance
-- Submit to plugin store
+**Changes:** Added 3D graph visualisation feature (Phase 5) with code donor research
 
 ---
 
