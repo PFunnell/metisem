@@ -39,13 +39,58 @@ MODIFY_DELETED = -2
 # --- Helper Functions ---
 
 
-def calculate_similarity(embeddings: np.ndarray) -> np.ndarray:
-    """Calculate cosine similarity matrix between embeddings. Diagonal set to 0."""
-    emb = embeddings.astype(np.float32)
-    norm = np.linalg.norm(emb, axis=1, keepdims=True)
-    sim = cosine_similarity(emb / norm, emb / norm)
-    np.fill_diagonal(sim, 0)
-    return sim
+def calculate_similarity(
+    embeddings: np.ndarray,
+    title_embeddings: Optional[np.ndarray] = None,
+    summary_embeddings: Optional[np.ndarray] = None,
+    title_weight: float = 0.0,
+    content_weight: float = 1.0,
+    summary_weight: float = 0.0
+) -> np.ndarray:
+    """Calculate weighted combined similarity matrix from multiple sources.
+
+    Args:
+        embeddings: Content embeddings (always required)
+        title_embeddings: Optional title embeddings
+        summary_embeddings: Optional summary embeddings
+        title_weight: Weight for title similarity
+        content_weight: Weight for content similarity
+        summary_weight: Weight for summary similarity
+
+    Returns:
+        Combined similarity matrix with diagonal set to 0
+    """
+    # Normalise weights
+    total = title_weight + content_weight + summary_weight
+    if total == 0:
+        total = 1.0
+        content_weight = 1.0
+
+    combined = np.zeros((len(embeddings), len(embeddings)), dtype=np.float32)
+
+    if content_weight > 0:
+        emb = embeddings.astype(np.float32)
+        norm = np.linalg.norm(emb, axis=1, keepdims=True)
+        norm = np.where(norm == 0, 1, norm)  # Avoid division by zero
+        content_sim = cosine_similarity(emb / norm, emb / norm)
+        combined += (content_weight / total) * content_sim
+
+    if title_weight > 0 and title_embeddings is not None:
+        emb = title_embeddings.astype(np.float32)
+        norm = np.linalg.norm(emb, axis=1, keepdims=True)
+        norm = np.where(norm == 0, 1, norm)
+        title_sim = cosine_similarity(emb / norm, emb / norm)
+        combined += (title_weight / total) * title_sim
+
+    if summary_weight > 0 and summary_embeddings is not None:
+        emb = summary_embeddings.astype(np.float32)
+        norm = np.linalg.norm(emb, axis=1, keepdims=True)
+        norm = np.where(norm == 0, 1, norm)
+        summary_sim = cosine_similarity(emb / norm, emb / norm)
+        combined += (summary_weight / total) * summary_sim
+
+    np.fill_diagonal(combined, 0)
+    return combined
 
 
 def find_links(similarity_matrix: np.ndarray, paths: List[Path], threshold: float, min_links: int, max_links: int, cluster_labels: Optional[np.ndarray] = None) -> Dict[Path, List[Path]]:
