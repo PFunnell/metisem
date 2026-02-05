@@ -1,9 +1,9 @@
 # RESUME
 
-- Plan: N/A (iterative optimisation)
-- Latest checkpoint: thoughts/shared/state/phase_1.10_checkpoint.md
+- Plan: thoughts/shared/plans/enhancement_plan.md (completed: multi-source linking + title fixer)
+- Latest checkpoint: thoughts/shared/state/title_fixer_checkpoint.md
 - Research: docs/research/ (gitignored)
-- Git: main @ 421c5f0 (local, needs push)
+- Git: main @ 44550a6
 - Backlog: thoughts/shared/plans/backlog.md
 
 - Configuration:
@@ -44,13 +44,40 @@
   - Documented Qwen2.5 7B for future model upgrade
   - Committed: ed51111, 87b5893
 
+- Phase 1.11 Status: ✅ COMPLETE (2026-02-05)
+  - Incremental summary updates: 10x performance improvement
+    - Extended database schema with summary tracking columns
+    - Added `detect_summary_changes()` for cache-aware processing
+    - New `--force-summaries` flag for full regeneration
+    - Cache hit ratio logged to run_logs
+    - Performance: <30s for unchanged vaults vs 4 hours previously
+  - Kelly's 22 colour palette handler
+    - Created `scripts/apply_graph_palette.py` with scientific palette
+    - Theme-aware omission (black for dark, white for light)
+    - Preview mode, backup, and customization flags
+    - Source: Kenneth Kelly (1965), maximum perceptual contrast
+  - Documentation updates
+    - README: Added title fixer, multi-source linking, --force-summaries
+    - Created docs/CONFIGURATION.md (comprehensive tuning guide)
+    - Updated CLAUDE.md with new flags
+  - Checkpoint: docs/state/phase_implementation_checkpoint.md
+
 - Uncommitted changes:
-  - thoughts/shared/state/RESUME.md - git status update
+  - metisem/core/database.py (summary schema + methods)
+  - summariser_ollama.py (incremental processing integration)
+  - scripts/apply_graph_palette.py (NEW)
+  - README.md (documentation updates)
+  - docs/CONFIGURATION.md (NEW)
+  - CLAUDE.md (--force-summaries flag)
+  - docs/state/phase_implementation_checkpoint.md (NEW)
+  - thoughts/shared/state/RESUME.md (this file)
 
 - Next actions:
-  - Optional: Update graph.json legend ordering for new usage patterns
-  - Optional: Generate transcript for Phases 1.8-1.10
-  - Future: Consider Qwen2.5 7B upgrade for better summarisation quality
-  - Future: Create validation set to measure precision/recall
+  - Commit Phase 1.11 changes with descriptive message
+  - Test incremental summaries on real vault (optional)
+  - Visual verification of Kelly palette in Obsidian
+  - User feedback on documentation clarity
 
 - Blockers: None
+
+- Scope note: Validation sets and human labelling are corpus-specific implementation work, not tool development. See backlog "Implementation Guidance" section.

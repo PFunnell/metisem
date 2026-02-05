@@ -104,6 +104,27 @@ class CacheDatabase:
         conn.executescript(self.SCHEMA)
         conn.commit()
 
+    def migrate_summary_schema(self) -> None:
+        """Add summary tracking columns if not present.
+
+        Adds has_summary, summary_hash, and summary_text columns to file_metadata
+        table for incremental summary processing. Idempotent - safe to call multiple times.
+        """
+        conn = self._get_connection()
+
+        # Check if migration already applied
+        cursor = conn.execute("PRAGMA table_info(file_metadata)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'has_summary' in columns:
+            return  # Already migrated
+
+        # Add summary tracking columns
+        conn.execute("ALTER TABLE file_metadata ADD COLUMN has_summary INTEGER DEFAULT 0")
+        conn.execute("ALTER TABLE file_metadata ADD COLUMN summary_hash TEXT")
+        conn.execute("ALTER TABLE file_metadata ADD COLUMN summary_text TEXT")
+        conn.commit()
+
     def close(self) -> None:
         """Close database connection."""
         if self._conn:
@@ -155,6 +176,43 @@ class CacheDatabase:
             """,
             (str(file_path), content_hash, mtime_ns, size_bytes, model_name, embedding_dim, int(time.time()))
         )
+        conn.commit()
+
+    def set_summary_metadata(
+        self,
+        file_path: Path,
+        content_hash: str,
+        summary_hash: str,
+        summary_text: str
+    ) -> None:
+        """Update summary metadata for a file.
+
+        Args:
+            file_path: Path to the file
+            content_hash: SHA256 hash of file content
+            summary_hash: SHA256 hash of summary text
+            summary_text: Generated summary text
+        """
+        conn = self._get_connection()
+        # Update summary fields while preserving other metadata
+        conn.execute(
+            """
+            UPDATE file_metadata
+            SET has_summary = 1, summary_hash = ?, summary_text = ?, content_hash = ?, updated_at = ?
+            WHERE file_path = ?
+            """,
+            (summary_hash, summary_text, content_hash, int(time.time()), str(file_path))
+        )
+        # If file not in database, insert minimal record
+        if conn.total_changes == 0:
+            conn.execute(
+                """
+                INSERT INTO file_metadata
+                (file_path, content_hash, mtime_ns, size_bytes, model_name, embedding_dim, has_summary, summary_hash, summary_text, updated_at)
+                VALUES (?, ?, 0, 0, '', 0, 1, ?, ?, ?)
+                """,
+                (str(file_path), content_hash, summary_hash, summary_text, int(time.time()))
+            )
         conn.commit()
 
     def get_all_paths(self, model_name: str) -> List[str]:

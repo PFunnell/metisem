@@ -13,7 +13,7 @@ from typing import List, Optional
 import requests
 from tqdm import tqdm
 
-from metisem.core.files import find_markdown_files as _find_all_md
+from metisem.core.files import find_markdown_files as _find_all_md, compute_file_hash, extract_summary, ChangeSet
 from metisem.core.markers import (
     SUMMARY_START,
     SUMMARY_END,
@@ -22,6 +22,8 @@ from metisem.core.markers import (
     replace_marker_block
 )
 from metisem.core.run_logger import RunLogger
+from metisem.core.database import CacheDatabase
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,58 @@ def summarise_text(text: str, model_name: str, max_length: int) -> str:
         logger.error(f"Error during summarisation: {e}")
         return ""
 
+def detect_summary_changes(file_paths: List[Path], db: CacheDatabase) -> ChangeSet:
+    """Detect which files need summaries generated.
+
+    Categorizes files into:
+    - new_files: Files not in database
+    - modified_files: Files with changed content_hash
+    - needs_summary: Files in database without has_summary flag (treated as new for summary purposes)
+    - unchanged_files: Files with valid cached summaries
+
+    Args:
+        file_paths: List of markdown files to check
+        db: CacheDatabase instance
+
+    Returns:
+        ChangeSet with categorized file lists
+    """
+    new_files = []
+    modified_files = []
+    needs_summary = []
+    unchanged_files = []
+
+    for path in file_paths:
+        cached = db.get_file_metadata(path)
+
+        if not cached:
+            # Not in database -> new file
+            new_files.append(path)
+        else:
+            # Compute current content hash
+            current_hash = compute_file_hash(path)
+            if not current_hash:
+                # Can't read file -> treat as modified to attempt processing
+                modified_files.append(path)
+                continue
+
+            if current_hash != cached.get('content_hash'):
+                # Content changed -> needs regeneration
+                modified_files.append(path)
+            elif not cached.get('has_summary'):
+                # Content unchanged but no summary flag -> needs summary
+                needs_summary.append(path)
+            else:
+                # Content unchanged and has summary -> skip
+                unchanged_files.append(path)
+
+    return ChangeSet(
+        new_files=new_files,
+        modified_files=modified_files,
+        deleted_files=needs_summary,  # Reusing deleted_files slot for needs_summary
+        unchanged_files=unchanged_files
+    )
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Batch-summarise Markdown files using Ollama")
     p.add_argument("vault_path", help="Obsidian vault path")
@@ -137,6 +191,7 @@ def main() -> None:
     p.add_argument("--max-files", type=int, default=None, help="Max files to process (default: all files)")
     p.add_argument("--delete-summaries", action="store_true", help="Remove existing summaries")
     p.add_argument("--apply-summaries", action="store_true", help="Insert new summaries")
+    p.add_argument("--force-summaries", action="store_true", help="Regenerate summaries even for unchanged files")
     p.add_argument("--verbose", action="store_true", help="Enable verbose logging (DEBUG level)")
     args = p.parse_args()
 
@@ -162,6 +217,22 @@ def main() -> None:
 
     total_files = len(files)
     logger.info(f"Found {total_files} markdown files in {args.vault_path}")
+
+    # Initialize cache database
+    vault_path = Path(args.vault_path)
+    cache_db = CacheDatabase(vault_path / '.metisem' / 'metisem.db')
+    cache_db.migrate_summary_schema()  # Idempotent migration
+
+    # Determine which files need processing
+    if args.apply_summaries and not args.force_summaries:
+        changes = detect_summary_changes(files, cache_db)
+        files_to_process = changes.new_files + changes.modified_files + changes.deleted_files  # deleted_files = needs_summary
+        files_with_summary = changes.unchanged_files
+        logger.info(f"Cache: {len(files_with_summary)} files with summaries, {len(files_to_process)} need processing")
+        logger.debug(f"  New: {len(changes.new_files)}, Modified: {len(changes.modified_files)}, Needs summary: {len(changes.deleted_files)}")
+    else:
+        files_to_process = files
+        files_with_summary = []
 
     # Initialize run logger
     run_logger = RunLogger(args.vault_path, 'summariser')
@@ -192,7 +263,7 @@ def main() -> None:
         logger.info("Generating and applying summaries...")
         successful = 0
         errors = 0
-        for f in tqdm(files, desc="Summarising"):
+        for f in tqdm(files_to_process, desc="Summarising"):
             try:
                 logger.debug(f"Processing: {f}")
                 text = f.read_text(encoding='utf-8')
@@ -203,6 +274,13 @@ def main() -> None:
                 summary = summarise_text(text, args.model, args.max_summary_length)
                 if summary:
                     insert_summary(f, summary)
+
+                    # Update cache database
+                    content_hash = compute_file_hash(f)
+                    if content_hash:
+                        summary_hash = hashlib.sha256(summary.encode('utf-8')).hexdigest()
+                        cache_db.set_summary_metadata(f, content_hash, summary_hash, summary)
+
                     successful += 1
                     logger.debug(f"Added summary to: {f}")
                     logger.debug(f"Summary: {summary[:100]}...")
@@ -211,17 +289,35 @@ def main() -> None:
                 errors += 1
                 run_logger.add_error(f"Error processing {f.name}: {str(e)}")
 
+        # Calculate metrics including cache hits
+        total_vault_files = len(files_to_process) + len(files_with_summary)
+        cache_hit_ratio = len(files_with_summary) / total_vault_files if total_vault_files > 0 else 0.0
+
         logger.info(f"\nSummary Generation Complete:")
-        logger.info(f"- Successfully processed: {successful}/{total_files} files")
-        logger.info(f"- Failed/Skipped: {total_files - successful} files")
+        logger.info(f"- Successfully processed: {successful}/{len(files_to_process)} files")
+        logger.info(f"- Cache hits: {len(files_with_summary)} files")
+        logger.info(f"- Failed/Skipped: {len(files_to_process) - successful} files")
+        if cache_hit_ratio > 0:
+            logger.info(f"- Cache hit ratio: {cache_hit_ratio:.1%}")
 
         # Log metrics
-        run_logger.set_file_stats(total=total_files, modified=successful)
+        run_logger.set_file_stats(
+            total=total_vault_files,
+            modified=successful,
+            unchanged=len(files_with_summary)
+        )
         run_logger.set_summary_stats(added=successful)
+
+        # Set cache hit ratio in run logger
+        if hasattr(run_logger, '_run_data'):
+            run_logger._run_data['cache_hit_ratio'] = cache_hit_ratio
+
         if errors > 0:
             run_logger.complete(status='partial' if successful > 0 else 'error')
         else:
             run_logger.complete()
+
+        cache_db.close()
 
 if __name__ == '__main__':
     main()

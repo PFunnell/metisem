@@ -52,11 +52,14 @@ python tagger.py /path/to/vault --tags-file tags.txt --apply-tags --force-embedd
 ```bash
 # Ensure Ollama is running first: ollama serve
 
-# Generate summaries
+# Generate summaries (incremental by default)
 python summariser_ollama.py /path/to/vault --apply-summaries
 
 # Remove existing summaries
 python summariser_ollama.py /path/to/vault --delete-summaries
+
+# Force regenerate all summaries (ignore cache)
+python summariser_ollama.py /path/to/vault --apply-summaries --force-summaries
 
 # Use specific model
 python summariser_ollama.py /path/to/vault --apply-summaries --model mistral
