@@ -86,6 +86,16 @@ This document tracks tool development work. For corpus-specific tuning (validati
 - **Rationale:** Helps users understand why files remain untagged
 - **Output:** `scripts/analyse_coverage.py`
 
+**Graph.json legend handler**
+- Apply Kelly's 22 colour contrast palette to Obsidian graph.json
+- Omit black or white based on theme preference (light/dark mode)
+- Map up to 21 colour groups to existing queries
+- Auto-detect theme from Obsidian appearance.json or via flag
+- Convert hex colours to RGB integer format for Obsidian compatibility
+- **Rationale:** Maximises visual distinction between tag groups in graph view
+- **Output:** `scripts/apply_graph_palette.py`
+- **Depends on:** None
+
 ### Infrastructure
 
 **Hardware-aware model selection (Phase 1.4)**

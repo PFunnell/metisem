@@ -142,11 +142,43 @@ def modify_markdown_file(fp: Path, links: List[Path], delete_existing: bool) -> 
 
         if delete_existing and has_block:
             text = remove_marker_block(text, LINK_SECTION_START, LINK_SECTION_END)
+            has_block = False  # Block has been removed, treat as no block
 
         if not links:
             return 0
 
-        items = sorted({f"[[{p.stem}]]" for p in links})
+        # Get vault root to make relative paths
+        vault_root = fp.parent
+        while vault_root.parent != vault_root:
+            # Walk up until we find .obsidian or reach filesystem root
+            if (vault_root / '.obsidian').exists():
+                break
+            vault_root = vault_root.parent
+
+        # Create wikilinks - use relative path if duplicate stems exist
+        stems_seen = {}
+        for p in links:
+            if p.stem not in stems_seen:
+                stems_seen[p.stem] = []
+            stems_seen[p.stem].append(p)
+
+        items = []
+        for p in links:
+            if len(stems_seen[p.stem]) > 1:
+                # Multiple files with same stem - use relative path from vault root
+                try:
+                    rel_path = p.relative_to(vault_root).as_posix()
+                    # Remove .md extension for wikilink
+                    rel_path = rel_path[:-3] if rel_path.endswith('.md') else rel_path
+                    items.append(f"[[{rel_path}]]")
+                except ValueError:
+                    # Fallback to stem if relative path fails
+                    items.append(f"[[{p.stem}]]")
+            else:
+                # Unique stem - just use filename
+                items.append(f"[[{p.stem}]]")
+
+        items = sorted(set(items))  # Deduplicate and sort
         block = (
             f"\n{LINK_SECTION_START}\n"
             "## Related Notes\n"
@@ -163,6 +195,7 @@ def modify_markdown_file(fp: Path, links: List[Path], delete_existing: bool) -> 
         return len(items)
     except Exception as e:
         # File read/write error
+        logger.error(f"Error modifying {fp}: {e}")
         return MODIFY_ERROR
 
 
@@ -355,21 +388,10 @@ def main() -> None:
         labels
     )
 
-    dist = {}
-    for src, tgt in links.items():
-        count = len(tgt)
-        dist[count] = dist.get(count, 0) + 1
-    logger.info("Link count distribution:")
-    for count in range(args.min_links, args.max_links+1):
-        num = dist.get(count, 0)
-        logger.info(f"  {num} files with {count} links")
-    zero = dist.get(0, 0)
-    if zero:
-        logger.info(f"  {zero} files with 0 links (none above threshold and no fallback configured)")
-
     total_added = 0
     modified = 0
     errors = 0
+    actual_link_counts = {}  # Track actual links written per file
 
     if args.apply_links or args.delete_links:
         # Actually modify files
@@ -380,8 +402,20 @@ def main() -> None:
             if r > 0:
                 total_added += r
                 modified += 1
+                actual_link_counts[r] = actual_link_counts.get(r, 0) + 1
             elif r == MODIFY_ERROR:
                 errors += 1
+
+        # Log actual distribution after writing
+        logger.info("Link count distribution:")
+        for count in range(args.min_links, args.max_links+1):
+            num = actual_link_counts.get(count, 0)
+            if num > 0:
+                logger.info(f"  {num} files with {count} links")
+        zero_count = len(files) - modified
+        if zero_count > 0:
+            logger.info(f"  {zero_count} files with 0 links")
+
         logger.info(
             f"Files modified: {modified}, "
             f"total links added: {total_added}, errors: {errors}"
@@ -389,11 +423,24 @@ def main() -> None:
     else:
         # Preview mode: report what would be done without modifying files
         run_logger.set_operation('preview')
+        dist = {}
         for f in files:
             to_add = links.get(f, [])
             if to_add:
                 total_added += len(to_add)
                 modified += 1
+                count = len(to_add)
+                dist[count] = dist.get(count, 0) + 1
+
+        logger.info("Link count distribution (preview):")
+        for count in range(args.min_links, args.max_links+1):
+            num = dist.get(count, 0)
+            if num > 0:
+                logger.info(f"  {num} files with {count} links")
+        zero_count = len(files) - modified
+        if zero_count > 0:
+            logger.info(f"  {zero_count} files with 0 links")
+
         logger.info(
             f"Preview: {modified} files would be modified, "
             f"{total_added} links would be added. Use --apply-links to modify files."

@@ -7,9 +7,12 @@ using descriptive titles extracted from their summary blocks.
 """
 import argparse
 import logging
+import os
 import re
 from pathlib import Path
 from typing import List, Tuple, Optional
+
+import requests
 
 from metisem.core.files import find_markdown_files, extract_summary, generate_title_from_summary
 from metisem.core.run_logger import RunLogger
@@ -17,6 +20,7 @@ from metisem.core.run_logger import RunLogger
 logger = logging.getLogger(__name__)
 
 DEFAULT_TITLE_PATTERN = r'^(New Chat|Untitled)( \(\d+\)| \d+)?$'
+OLLAMA_HOST = os.environ.get('OLLAMA_HOST', 'localhost:11434')
 
 
 def is_generic_title(filename: str, pattern: str) -> bool:
@@ -50,15 +54,82 @@ def find_files_with_generic_titles(
     return generic
 
 
+def generate_title_with_llm(summary: str, model_name: str, max_length: int) -> Optional[str]:
+    """Generate a concise title using Ollama LLM.
+
+    Args:
+        summary: Summary text to generate title from
+        model_name: Ollama model name
+        max_length: Maximum title length
+
+    Returns:
+        Generated title or None if failed
+    """
+    try:
+        # Truncate summary to first 200 words for speed
+        words = summary.split()
+        if len(words) > 200:
+            summary = ' '.join(words[:200])
+
+        prompt = (
+            f"Create a short title (max {max_length} chars) for this summary:\n\n"
+            f"{summary}\n\n"
+            f"Title:"
+        )
+
+        response = requests.post(
+            f'http://{OLLAMA_HOST}/api/generate',
+            json={
+                'model': model_name,
+                'prompt': prompt,
+                'stream': False,
+                'options': {
+                    'temperature': 0.3,
+                    'num_predict': 20,
+                    'top_p': 0.9
+                }
+            },
+            timeout=60
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            title = result.get('response', '').strip()
+
+            # Sanitize filename
+            title = re.sub(r'[<>:"/\\|?*]', '', title)
+            title = re.sub(r'\s+', ' ', title).strip()
+
+            # Remove quotes if present
+            title = title.strip('"\'')
+
+            # Truncate at word boundary if needed
+            if len(title) > max_length:
+                title = title[:max_length].rsplit(' ', 1)[0]
+
+            return title if title else None
+        else:
+            logger.error(f"Ollama API error: {response.status_code}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error generating LLM title: {e}")
+        return None
+
+
 def generate_rename_proposals(
     files: List[Path],
-    max_length: int = 60
+    max_length: int = 60,
+    use_llm: bool = False,
+    model_name: str = 'mistral'
 ) -> List[Tuple[Path, Optional[str]]]:
     """Generate rename proposals for files with generic titles.
 
     Args:
         files: List of files to process
         max_length: Maximum length for generated titles
+        use_llm: Use LLM for title generation instead of heuristic
+        model_name: Ollama model name if use_llm is True
 
     Returns:
         List of tuples (original_path, proposed_title)
@@ -72,10 +143,16 @@ def generate_rename_proposals(
             summary = extract_summary(content)
 
             if summary:
-                new_title = generate_title_from_summary(summary, max_length)
+                if use_llm:
+                    logger.info(f"Generating LLM title for: {file_path.name}")
+                    new_title = generate_title_with_llm(summary, model_name, max_length)
+                else:
+                    new_title = generate_title_from_summary(summary, max_length)
+
                 proposals.append((file_path, new_title))
             else:
                 # No summary found
+                logger.warning(f"No summary found for: {file_path.name}")
                 proposals.append((file_path, None))
 
         except Exception as e:
@@ -148,6 +225,17 @@ def main() -> None:
         help='Maximum length for generated titles (default: 60)'
     )
     p.add_argument(
+        '--use-llm',
+        action='store_true',
+        help='Use Ollama LLM for title generation instead of heuristic extraction'
+    )
+    p.add_argument(
+        '--model',
+        type=str,
+        default='mistral',
+        help='Ollama model to use for title generation (default: mistral)'
+    )
+    p.add_argument(
         '--verbose',
         action='store_true',
         help='Enable verbose logging (DEBUG level)'
@@ -168,7 +256,9 @@ def main() -> None:
     run_logger.set_parameters({
         'title_pattern': args.title_pattern,
         'max_length': args.max_length,
-        'apply_fixes': args.apply_fixes
+        'apply_fixes': args.apply_fixes,
+        'use_llm': args.use_llm,
+        'model': args.model if args.use_llm else None
     })
 
     # Find files with generic titles
@@ -183,8 +273,16 @@ def main() -> None:
         return
 
     # Generate rename proposals
-    logger.info("Generating title proposals...")
-    proposals = generate_rename_proposals(generic_files, args.max_length)
+    if args.use_llm:
+        logger.info(f"Generating title proposals using LLM ({args.model})...")
+    else:
+        logger.info("Generating title proposals using heuristic extraction...")
+    proposals = generate_rename_proposals(
+        generic_files,
+        args.max_length,
+        use_llm=args.use_llm,
+        model_name=args.model
+    )
 
     # Count proposals
     valid_proposals = sum(1 for _, title in proposals if title is not None)
