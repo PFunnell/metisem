@@ -61,6 +61,15 @@ All tools leverage [Sentence Transformers](https://www.sbert.net/) for semantic 
 
 ---
 
+## Documentation
+
+- **[Quick Start](#quick-start)** - Installation and basic usage (below)
+- **[EXAMPLES.md](docs/EXAMPLES.md)** - Terminal outputs, generated content, and common workflows
+- **[CONFIGURATION.md](docs/CONFIGURATION.md)** - Comprehensive tuning guide for thresholds, models, and tags
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development guidelines
+
+---
+
 ## Quick Start
 
 ### Installation
@@ -133,6 +142,8 @@ python title_fixer.py /path/to/vault --title-pattern "^Draft.*" --max-length 80
 ---
 
 ## Usage
+
+**See [EXAMPLES.md](docs/EXAMPLES.md) for terminal outputs, generated content examples, and complete workflows.**
 
 ### Semantic Linker Options
 
