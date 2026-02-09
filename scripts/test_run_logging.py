@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 """Automated test script for Metisem run logging and core functionality.
 
+DEPRECATED: This script is being replaced by pytest-based integration tests.
+Please use:
+    pytest tests/integration/  # Run all integration tests
+    pytest tests/unit/         # Run unit tests only
+
+This legacy script will be maintained for backwards compatibility but new
+tests should be added to the pytest test suite.
+
 This script tests:
 1. Linker functionality and logging
 2. Tagger functionality and logging

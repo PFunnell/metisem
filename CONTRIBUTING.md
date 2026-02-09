@@ -89,13 +89,52 @@ pre-commit install
 
 ### Testing
 
-Currently, testing is manual:
-1. Create or use a test vault with markdown files
-2. Run your changes against the test vault
-3. Verify expected behaviour
-4. Check that no files are corrupted
+All changes should include appropriate tests. The project uses pytest for testing:
 
-Future: Automated tests are planned.
+**Running Tests:**
+```bash
+# Run all unit tests (fast, no external dependencies)
+pytest tests/unit/ -v
+
+# Run with coverage report
+pytest tests/unit/ --cov=metisem --cov-report=html
+
+# Run specific test file
+pytest tests/unit/test_database.py -v
+
+# Run integration tests (requires TEST_VAULT_PATH environment variable)
+export TEST_VAULT_PATH="/path/to/test/vault"
+pytest tests/integration/ -v
+```
+
+**Coverage Requirements:**
+- New code should maintain or improve overall coverage (~80%)
+- Core modules (database, embeddings, markers) should maintain 100% coverage
+- Pull requests that significantly reduce coverage may be asked for additional tests
+
+**Writing Tests:**
+- Unit tests go in `tests/unit/` and test individual functions/classes
+- Integration tests go in `tests/integration/` and test complete workflows
+- Use synthetic fixtures from `tests/fixtures/markdown_samples.py`
+- Mock external dependencies (Sentence Transformers, Ollama)
+- Test edge cases and error conditions
+
+**Test Organization:**
+```python
+class TestFeatureName:
+    """Tests for FeatureName functionality."""
+
+    def test_normal_case(self):
+        """Should handle normal input correctly."""
+        # Arrange
+        input_data = ...
+
+        # Act
+        result = function_under_test(input_data)
+
+        # Assert
+        assert result == expected_value
+```
 
 ### Type Checking
 

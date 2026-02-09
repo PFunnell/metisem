@@ -124,21 +124,66 @@ This project uses the Claude Code RPI Plus workflow:
 
 ## Testing
 
-Automated test suite covers core functionality:
+Comprehensive pytest-based test suite with unit and integration tests:
 
 ```bash
-# Run all tests
-python scripts/test_run_logging.py
+# Run all tests (unit + integration)
+pytest -v
 
-# Tests cover:
-# - Linker functionality and logging
-# - Tagger functionality and logging
-# - Query utility and parameter analysis
-# - CSV export
-# - Cleanup utility
+# Run only unit tests (fast, no vault required)
+pytest tests/unit/ -v
+
+# Run with coverage report
+pytest tests/unit/ --cov=metisem --cov-report=html
+
+# Run only integration tests (requires test vault)
+pytest tests/integration/ -v
+
+# Run specific test file
+pytest tests/unit/test_database.py -v
+
+# Skip integration tests (default in CI)
+pytest -m "not integration" -v
 ```
 
-Test vault path configured in `.env` (TEST_VAULT_PATH) or `.claude/portable_config.local.yaml` (testing.vault_path).
+### Test Organization
+
+- **Unit tests** (`tests/unit/`): Fast, isolated tests for core modules
+  - `test_files.py` - File discovery, hashing, change detection
+  - `test_markers.py` - HTML comment marker operations
+  - `test_embeddings.py` - Embedding generation (mocked)
+  - `test_cache.py` - Cache save/load/validation
+  - `test_database.py` - SQLite operations
+  - `test_run_logger.py` - Run logging and metrics
+
+- **Integration tests** (`tests/integration/`): Full tool execution tests
+  - Requires test vault configuration (TEST_VAULT_PATH environment variable)
+  - Tests complete workflows with real files
+  - Marked with `@pytest.mark.integration`
+
+### Coverage
+
+Current unit test coverage: ~80% across core modules
+- database.py: 100%
+- embeddings.py: 100%
+- markers.py: 100%
+- run_logger.py: 100%
+- files.py: 95%
+- cache.py: 42% (integration-level code)
+
+### CI/CD
+
+GitHub Actions workflow (`.github/workflows/test.yml`):
+- Runs on push/PR to main/develop branches
+- Tests Python 3.8, 3.9, 3.10, 3.11 on Ubuntu, Windows, macOS
+- Lints with ruff
+- Runs unit tests with coverage reporting
+- Uploads coverage to Codecov
+
+### Legacy Test Script
+
+`scripts/test_run_logging.py` is deprecated but maintained for backwards compatibility.
+New tests should be added to the pytest suite.
 
 ## Constraints
 

@@ -358,12 +358,35 @@ pip install mypy pre-commit
 pre-commit install
 ```
 
+### Testing
+
+Comprehensive pytest test suite with 172 unit tests and integration tests:
+
+```bash
+# Run all tests
+pytest -v
+
+# Run only unit tests (fast, no external dependencies)
+pytest tests/unit/ -v
+
+# Run with coverage report
+pytest tests/unit/ --cov=metisem --cov-report=html
+
+# View coverage report
+# Open htmlcov/index.html in browser
+```
+
+Current coverage: ~80% across core modules (database: 100%, embeddings: 100%, markers: 100%, run_logger: 100%, files: 95%)
+
+Integration tests require test vault configuration via `TEST_VAULT_PATH` environment variable.
+
 ### Code Quality
 
 - **Type hints** -Full type annotations on all public functions
 - **Linting** -Ruff configured in `pyproject.toml`
 - **Pre-commit hooks** -Automatic formatting and validation
 - **Type checking** -Run `mypy main.py tagger.py summariser_ollama.py --ignore-missing-imports`
+- **CI/CD** -GitHub Actions runs tests on Python 3.8-3.11 across Ubuntu, Windows, macOS
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
