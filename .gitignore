@@ -27,9 +27,16 @@ models/
 # IDE workspace files
 *.code-workspace
 
-# Claude Code RPI Plus
+# Claude Code local settings
 .claude/portable_config.local.yaml
 .claude/settings.local.json
+CLAUDE.local.md
+
+# Test coverage output
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
 
 # Environment files
 .env
