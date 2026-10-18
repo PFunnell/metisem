@@ -367,6 +367,60 @@ class TestEmbeddingCacheMultipleFiles:
             np.testing.assert_array_almost_equal(cached['embedding'], embedding, decimal=6)
 
 
+class TestEmbeddingCacheVaultMove:
+    """The embedding cache survives moving the vault to another folder or OS."""
+
+    def test_saves_vault_relative_keys(self, tmp_path):
+        vault_path = tmp_path / "vault"
+        vault_path.mkdir()
+        cache = EmbeddingCache(str(vault_path), "test-model")
+        cache.set(vault_path / "sub" / "a.md", "h", np.array([1.0], dtype=np.float32))
+        cache.save()
+
+        data = np.load(cache.cache_file, allow_pickle=True)
+
+        assert list(data['paths']) == ["sub/a.md"]
+
+    def test_loads_windows_absolute_keys_into_moved_vault(self, tmp_path):
+        """Keys written on Windows are found after the vault is copied elsewhere."""
+        vault_path = tmp_path / "GPT2025"
+        cache_dir = vault_path / ".metisem"
+        cache_dir.mkdir(parents=True)
+        np.savez(
+            cache_dir / "embeddings_GPT2025_test-model.npz",
+            paths=np.array([r"D:\Obsidian\GPT2025\sub\a.md"]),
+            hashes=np.array(["h"]),
+            embs=np.array([[1.0, 2.0]], dtype=np.float32),
+        )
+
+        cache = EmbeddingCache(str(vault_path), "test-model")
+        cache.load()
+
+        assert cache.get(vault_path / "sub" / "a.md")['hash'] == "h"
+
+    def test_copied_vault_reuses_every_embedding(self, tmp_path, mock_embedding_model):
+        """Copying the whole vault (with .metisem/, without preserved mtimes) re-embeds nothing."""
+        import shutil
+        from metisem.core.cache import generate_embeddings
+        from metisem.core.files import find_markdown_files
+
+        original = tmp_path / "machine_a" / "Vault"
+        (original / "sub").mkdir(parents=True)
+        (original / "a.md").write_text("Alpha note", encoding="utf-8")
+        (original / "sub" / "b.md").write_text("Beta note", encoding="utf-8")
+        generate_embeddings(find_markdown_files(str(original)), mock_embedding_model, "m", 8, "cpu", str(original))
+
+        moved = tmp_path / "machine_b" / "Vault"
+        shutil.copytree(original, moved, copy_function=shutil.copy)  # copy drops mtimes
+        shutil.rmtree(original)
+
+        files = find_markdown_files(str(moved))
+        embs, valid, stats = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(moved))
+
+        assert stats == {'new': 0, 'modified': 0, 'unchanged': 2, 'deleted': 0}
+        assert len(valid) == 2 and embs.shape[0] == 2
+
+
 class TestEmbeddingCachePathHandling:
     """Tests for path handling in cache."""
 

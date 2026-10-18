@@ -183,6 +183,38 @@ def detect_summary_changes(file_paths: List[Path], db: CacheDatabase) -> ChangeS
         unchanged_files=unchanged_files
     )
 
+def adopt_existing_summaries(file_paths: List[Path], db: CacheDatabase) -> List[Path]:
+    """Record summaries already present in files so they aren't regenerated.
+
+    Covers files with no cache entry, such as a vault copied from another machine
+    or summarised before incremental caching existed. Use --force-summaries to
+    regenerate them anyway.
+
+    Args:
+        file_paths: Files the cache says need a summary
+        db: CacheDatabase instance
+
+    Returns:
+        Files whose existing summary was recorded
+    """
+    adopted = []
+    for path in file_paths:
+        try:
+            content = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        summary = extract_summary(content)
+        if not summary:
+            continue
+        content_hash = compute_file_hash(path)
+        if not content_hash:
+            continue
+        summary_hash = hashlib.sha256(summary.encode('utf-8')).hexdigest()
+        db.set_summary_metadata(path, content_hash, summary_hash, summary)
+        adopted.append(path)
+    return adopted
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Batch-summarise Markdown files using Ollama")
     p.add_argument("vault_path", help="Obsidian vault path")
@@ -226,9 +258,14 @@ def main() -> None:
     # Determine which files need processing
     if args.apply_summaries and not args.force_summaries:
         changes = detect_summary_changes(files, cache_db)
-        files_to_process = changes.new_files + changes.modified_files + changes.deleted_files  # deleted_files = needs_summary
-        files_with_summary = changes.unchanged_files
-        logger.info(f"Cache: {len(files_with_summary)} files with summaries, {len(files_to_process)} need processing")
+        # Files the cache doesn't know about but which already carry a summary block
+        # (e.g. a vault copied from another machine) are recorded, not regenerated
+        candidates = changes.new_files + changes.deleted_files  # deleted_files = needs_summary
+        adopted = adopt_existing_summaries(candidates, cache_db)
+        adopted_set = set(adopted)
+        files_to_process = [f for f in candidates if f not in adopted_set] + changes.modified_files
+        files_with_summary = changes.unchanged_files + adopted
+        logger.info(f"Cache: {len(files_with_summary)} files with summaries ({len(adopted)} existing summaries adopted), {len(files_to_process)} need processing")
         logger.debug(f"  New: {len(changes.new_files)}, Modified: {len(changes.modified_files)}, Needs summary: {len(changes.deleted_files)}")
     else:
         files_to_process = files

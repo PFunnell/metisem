@@ -292,6 +292,12 @@ vault/
 rm -rf /path/to/vault/.metisem/
 ```
 
+### Moving a Vault (Another Folder or Machine)
+
+Copy the whole vault folder, including `.metisem/`. Cache entries are keyed by path relative to the vault, so nothing is re-embedded or re-summarised after the move, even between Windows and macOS. Caches written by older versions (absolute paths) are converted automatically the first time a tool opens them; the conversion uses the vault paths in the run logs, or else the vault's folder name, so keep the folder name the same.
+
+If `.metisem/` doesn't come along, embeddings are rebuilt, but the summariser still keeps existing summaries: a note that already has a summary block is recorded, not regenerated. Only `--force-summaries` regenerates (and overwrites) them.
+
 ### Processing Subsets (Testing)
 
 Use `--max-files` to process a subset:

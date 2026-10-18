@@ -13,7 +13,7 @@ from sentence_transformers import SentenceTransformer
 
 from .files import read_file_text_and_hash, get_common_vault_path, detect_file_changes
 from .embeddings import encode_texts, get_embedding_dimension
-from .database import CacheDatabase
+from .database import CacheDatabase, is_absolute_key, vault_key
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,8 @@ class EmbeddingCache:
         self.model_name = model_name
         self.cache_dir = self.vault_path / cache_dir
         self.cache_file = self._get_cache_path()
-        self._data: Dict[Path, Dict[str, Any]] = {}
+        # Keyed by vault-relative POSIX path (see vault_key), so the cache survives moving the vault
+        self._data: Dict[str, Dict[str, Any]] = {}
 
         # Initialize SQLite database
         self.db = CacheDatabase(self.cache_dir / "metisem.db")
@@ -55,31 +56,43 @@ class EmbeddingCache:
             data = np.load(self.cache_file, allow_pickle=True)
             # npz format from tagger.py
             if 'paths' in data and 'hashes' in data and 'embs' in data:
-                self._data = {
-                    Path(p): {'hash': h, 'embedding': e}
-                    for p, h, e in zip(data['paths'], data['hashes'], data['embs'])
-                }
+                self._data = {}
+                for p, h, e in zip(data['paths'], data['hashes'], data['embs']):
+                    key = self._stored_key(str(p))
+                    if key is not None:
+                        self._data[key] = {'hash': h, 'embedding': e}
             # .npy format from main.py (structured array)
             elif data.dtype.names:
-                self._data = {
-                    Path(item['path']): {'hash': item['hash'], 'embedding': item['embedding']}
-                    for item in data
-                }
+                self._data = {}
+                for item in data:
+                    key = self._stored_key(str(item['path']))
+                    if key is not None:
+                        self._data[key] = {'hash': item['hash'], 'embedding': item['embedding']}
             else:
                 self._data = {}
         except Exception:
             self._data = {}
 
+    def _stored_key(self, key: str) -> Optional[str]:
+        """Normalise a key read from disk; absolute keys from older caches become vault-relative."""
+        if is_absolute_key(key):
+            return self.db.relative_key_for_legacy(key)
+        return key
+
+    def _key(self, file_path: Path) -> str:
+        return vault_key(file_path, self.vault_path)
+
     def save(self) -> None:
-        """Save cache to disk in npz format."""
+        """Save cache to disk in npz format, keyed by vault-relative path."""
         if not self._data:
             return
 
         self.cache_dir.mkdir(exist_ok=True)
 
-        paths = np.array([str(p) for p in self._data.keys()])
-        hashes = np.array([self._data[p]['hash'] for p in self._data.keys()])
-        embs = np.stack([self._data[p]['embedding'] for p in self._data.keys()])
+        keys = list(self._data.keys())
+        paths = np.array(keys)
+        hashes = np.array([self._data[k]['hash'] for k in keys])
+        embs = np.stack([self._data[k]['embedding'] for k in keys])
 
         np.savez(self.cache_file, paths=paths, hashes=hashes, embs=embs)
 
@@ -92,7 +105,7 @@ class EmbeddingCache:
         Returns:
             Dictionary with 'hash' and 'embedding' keys, or None if not cached
         """
-        return self._data.get(file_path)
+        return self._data.get(self._key(file_path))
 
     def set(self, file_path: Path, file_hash: str, embedding: np.ndarray) -> None:
         """Store embedding in cache.
@@ -102,7 +115,7 @@ class EmbeddingCache:
             file_hash: SHA256 hash of file content
             embedding: Embedding vector
         """
-        self._data[file_path] = {'hash': file_hash, 'embedding': embedding}
+        self._data[self._key(file_path)] = {'hash': file_hash, 'embedding': embedding}
 
     def is_valid(self, file_path: Path, current_hash: str) -> bool:
         """Check if cached embedding is valid for current file content.
@@ -166,8 +179,7 @@ class EmbeddingCache:
         Args:
             file_path: Path to the file
         """
-        if file_path in self._data:
-            del self._data[file_path]
+        self._data.pop(self._key(file_path), None)
         self.db.remove_file(file_path)
 
 
@@ -240,12 +252,17 @@ def generate_embeddings(
                 to_embed.append((path, content))
     else:
         # Incremental mode: load unchanged, embed new/modified
+        missing = []
         for path in changes.unchanged_files:
             cached = cache.get(path)
             if cached:
                 embeddings_map[path] = cached
+            else:
+                missing.append(path)  # metadata says unchanged but no stored embedding
+        if missing:
+            logger.info(f"{len(missing)} unchanged files have no stored embedding; re-embedding them")
 
-        for path in changes.new_files + changes.modified_files:
+        for path in changes.new_files + changes.modified_files + missing:
             content, file_hash = read_file_text_and_hash(path, use_summary=use_summaries)
             if file_hash:
                 file_hashes[path] = file_hash
@@ -280,6 +297,7 @@ def generate_embeddings(
 
     # Save updated cache
     cache.save()
+    cache.db.close()
 
     # Build output arrays in original file order
     final_embeddings = []

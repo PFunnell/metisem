@@ -119,23 +119,93 @@ class TestFileMetadata:
 class TestFileMetadataList:
     """Tests for listing cached file paths."""
 
-    def test_get_all_paths_for_model(self, temp_database):
-        """Should return all file paths for specific model."""
-        db = CacheDatabase(temp_database)
+    def test_get_all_paths_for_model(self, tmp_path):
+        """Should return full file paths (vault root + stored key) for a specific model."""
+        vault = tmp_path / "vault"
+        db = CacheDatabase(vault / ".metisem" / "metisem.db")
 
         # Add files for model1
-        db.set_file_metadata(Path("file1.md"), "hash1", 1000, 100, "model1", 384)
-        db.set_file_metadata(Path("file2.md"), "hash2", 2000, 200, "model1", 384)
+        db.set_file_metadata(vault / "file1.md", "hash1", 1000, 100, "model1", 384)
+        db.set_file_metadata(vault / "file2.md", "hash2", 2000, 200, "model1", 384)
 
         # Add file for model2
-        db.set_file_metadata(Path("file3.md"), "hash3", 3000, 300, "model2", 768)
+        db.set_file_metadata(vault / "file3.md", "hash3", 3000, 300, "model2", 768)
 
         paths = db.get_all_paths("model1")
 
         assert len(paths) == 2
-        assert "file1.md" in paths
-        assert "file2.md" in paths
-        assert "file3.md" not in paths
+        assert str(vault / "file1.md") in paths
+        assert str(vault / "file2.md") in paths
+        assert str(vault / "file3.md") not in paths
+        db.close()
+
+
+class TestVaultRelativeKeys:
+    """Cache keys are vault-relative so the cache survives moving the vault."""
+
+    def _raw_keys(self, db):
+        return sorted(r[0] for r in db._get_connection().execute("SELECT file_path FROM file_metadata"))
+
+    def test_stores_vault_relative_posix_keys(self, tmp_path):
+        vault = tmp_path / "vault"
+        db = CacheDatabase(vault / ".metisem" / "metisem.db")
+
+        db.set_file_metadata(vault / "sub" / "a.md", "h", 1, 1, "m", 3)
+
+        assert self._raw_keys(db) == ["sub/a.md"]
+        assert db.get_file_metadata(vault / "sub" / "a.md")["content_hash"] == "h"
+        db.close()
+
+    def test_migrates_windows_keys_using_run_log_root(self, tmp_path):
+        """A cache written on Windows is reused after the vault moves elsewhere."""
+        vault = tmp_path / "Copied"
+        db_path = vault / ".metisem" / "metisem.db"
+        old = CacheDatabase(db_path)
+        conn = old._get_connection()
+        conn.execute("DELETE FROM metadata WHERE key = 'path_keys'")
+        conn.execute(
+            "INSERT INTO file_metadata (file_path, content_hash, mtime_ns, size_bytes, model_name, embedding_dim, updated_at)"
+            " VALUES (?, 'h', 1, 1, 'm', 3, 0)", (r"D:\Obsidian\GPT2025\sub\a.md",))
+        conn.execute(
+            "INSERT INTO run_logs (run_id, timestamp, tool_name, operation, vault_path) VALUES ('r', 0, 't', 'o', ?)",
+            (r"D:\Obsidian\GPT2025",))
+        conn.commit()
+        old.close()
+
+        db = CacheDatabase(db_path)
+
+        assert self._raw_keys(db) == ["sub/a.md"]
+        assert db.get_file_metadata(vault / "sub" / "a.md") is not None
+        db.close()
+
+    def test_migrates_keys_by_vault_folder_name_without_run_logs(self, tmp_path):
+        vault = tmp_path / "GPT2025"
+        db_path = vault / ".metisem" / "metisem.db"
+        old = CacheDatabase(db_path)
+        conn = old._get_connection()
+        conn.execute("DELETE FROM metadata WHERE key = 'path_keys'")
+        conn.execute(
+            "INSERT INTO file_metadata (file_path, content_hash, mtime_ns, size_bytes, model_name, embedding_dim, updated_at)"
+            " VALUES (?, 'h', 1, 1, 'm', 3, 0)", (r"D:\Obsidian\GPT2025\a.md",))
+        conn.commit()
+        old.close()
+
+        db = CacheDatabase(db_path)
+
+        assert self._raw_keys(db) == ["a.md"]
+        db.close()
+
+    def test_summary_metadata_inserts_after_earlier_writes(self, tmp_path):
+        """Regression: the insert branch used connection-wide total_changes, so only the first file was recorded."""
+        vault = tmp_path / "vault"
+        db = CacheDatabase(vault / ".metisem" / "metisem.db")
+        db.migrate_summary_schema()
+
+        db.set_summary_metadata(vault / "a.md", "ha", "sa", "summary a")
+        db.set_summary_metadata(vault / "b.md", "hb", "sb", "summary b")
+
+        assert db.get_file_metadata(vault / "b.md")["has_summary"] == 1
+        db.close()
 
     def test_get_all_paths_empty_model(self, temp_database):
         """Should return empty list for model with no files."""

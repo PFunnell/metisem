@@ -4,11 +4,65 @@ This module provides persistent storage for file metadata (hashes, mtimes) and
 tag embeddings, enabling fast incremental processing.
 """
 
+import re
 import sqlite3
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, Iterable, List
 import numpy as np
+
+# Absolute path written by an older version or another OS: POSIX root, Windows drive or UNC share
+_ABSOLUTE_KEY = re.compile(r'^(/|[A-Za-z]:[\\/]|\\\\)')
+
+
+def is_absolute_key(key: str) -> bool:
+    """Return True if a stored cache key is an absolute path from any OS."""
+    return bool(_ABSOLUTE_KEY.match(key))
+
+
+def vault_key(file_path: Path, vault_root: Path) -> str:
+    """Storage key for a file: its path relative to the vault, in POSIX form.
+
+    Accepts paths in the form the tools find them (absolute, or relative under a
+    relative vault argument) and paths that are already vault-relative. Absolute
+    paths outside the vault are returned unchanged.
+    """
+    p = Path(file_path)
+    root = Path(vault_root)
+    if p.is_absolute():
+        try:
+            return p.relative_to(root.absolute()).as_posix()
+        except ValueError:
+            return str(p)
+    try:
+        return p.relative_to(root).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
+def legacy_key_to_relative(key: str, known_roots: Iterable[str], vault_name: str) -> Optional[str]:
+    """Convert an absolute cache key from an older cache to a vault-relative POSIX key.
+
+    Works across operating systems, so a cache written on Windows
+    (D:\\Vault\\a.md) can be reused after the vault is copied to macOS.
+
+    Args:
+        key: Stored absolute path string
+        known_roots: Vault root paths the cache may have been written under
+        vault_name: Folder name of the vault, used when no root matches
+
+    Returns:
+        Vault-relative POSIX path, or None if the key can't be placed in the vault
+    """
+    norm = key.replace('\\', '/')
+    for root in known_roots:
+        root_norm = root.replace('\\', '/').rstrip('/')
+        if root_norm and norm.lower().startswith(root_norm.lower() + '/'):
+            return norm[len(root_norm) + 1:]
+    parts = norm.split('/')
+    if vault_name in parts[:-1]:
+        return '/'.join(parts[parts.index(vault_name) + 1:])
+    return None
 
 
 class CacheDatabase:
@@ -80,16 +134,63 @@ class CacheDatabase:
     CREATE INDEX IF NOT EXISTS idx_run_vault ON run_logs(vault_path);
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, vault_root: Optional[Path] = None):
         """Initialize database connection.
+
+        File paths are stored relative to the vault root, so the cache survives
+        moving the vault to another folder or machine.
 
         Args:
             db_path: Path to SQLite database file
+            vault_root: Vault the cached files belong to (default: the parent of
+                the database's folder, i.e. <vault>/.metisem/metisem.db)
         """
-        self.db_path = db_path
+        self.db_path = Path(db_path)
+        self.vault_root = Path(vault_root) if vault_root is not None else self.db_path.parent.parent
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: Optional[sqlite3.Connection] = None
         self._initialize_schema()
+        self._migrate_path_keys()
+
+    def _key(self, file_path: Path) -> str:
+        """Storage key for a file: vault-relative POSIX path, or the path as given if outside the vault."""
+        return vault_key(file_path, self.vault_root)
+
+    def _from_key(self, key: str) -> str:
+        """Path string for a storage key, in the same form as paths found under vault_root."""
+        if is_absolute_key(key):
+            return key
+        return str(self.vault_root / key)
+
+    def _migrate_path_keys(self) -> None:
+        """Convert absolute file_metadata keys from older caches to vault-relative keys.
+
+        Idempotent: runs once per database, recorded in the metadata table.
+        """
+        if self.get_metadata('path_keys') == 'relative':
+            return
+        conn = self._get_connection()
+        rows = conn.execute("SELECT file_path FROM file_metadata").fetchall()
+        for (key,) in rows:
+            if not is_absolute_key(key):
+                continue
+            rel = self.relative_key_for_legacy(key)
+            if rel:
+                conn.execute("UPDATE OR REPLACE file_metadata SET file_path = ? WHERE file_path = ?", (rel, key))
+        conn.commit()
+        self.set_metadata('path_keys', 'relative')
+
+    def relative_key_for_legacy(self, key: str) -> Optional[str]:
+        """Vault-relative key for an absolute path stored by an older cache, or None.
+
+        Tries the current vault root and every vault path in the run logs, then
+        falls back to locating the vault's folder name inside the path.
+        """
+        conn = self._get_connection()
+        roots = [str(self.vault_root.absolute())]
+        roots += [row[0] for row in conn.execute("SELECT DISTINCT vault_path FROM run_logs")]
+        roots = [r for r in roots if is_absolute_key(r)]
+        return legacy_key_to_relative(key, roots, self.vault_root.absolute().name)
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get or create database connection."""
@@ -143,10 +244,14 @@ class CacheDatabase:
         conn = self._get_connection()
         cursor = conn.execute(
             "SELECT * FROM file_metadata WHERE file_path = ?",
-            (str(file_path),)
+            (self._key(file_path),)
         )
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        result = dict(row)
+        result['file_path'] = self._from_key(result['file_path'])
+        return result
 
     def set_file_metadata(
         self,
@@ -174,7 +279,7 @@ class CacheDatabase:
             (file_path, content_hash, mtime_ns, size_bytes, model_name, embedding_dim, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (str(file_path), content_hash, mtime_ns, size_bytes, model_name, embedding_dim, int(time.time()))
+            (self._key(file_path), content_hash, mtime_ns, size_bytes, model_name, embedding_dim, int(time.time()))
         )
         conn.commit()
 
@@ -194,24 +299,26 @@ class CacheDatabase:
             summary_text: Generated summary text
         """
         conn = self._get_connection()
+        key = self._key(file_path)
         # Update summary fields while preserving other metadata
-        conn.execute(
+        cursor = conn.execute(
             """
             UPDATE file_metadata
             SET has_summary = 1, summary_hash = ?, summary_text = ?, content_hash = ?, updated_at = ?
             WHERE file_path = ?
             """,
-            (summary_hash, summary_text, content_hash, int(time.time()), str(file_path))
+            (summary_hash, summary_text, content_hash, int(time.time()), key)
         )
-        # If file not in database, insert minimal record
-        if conn.total_changes == 0:
+        # If file not in database, insert minimal record (rowcount is per statement;
+        # total_changes is cumulative per connection, so it missed every insert after the first write)
+        if cursor.rowcount == 0:
             conn.execute(
                 """
                 INSERT INTO file_metadata
                 (file_path, content_hash, mtime_ns, size_bytes, model_name, embedding_dim, has_summary, summary_hash, summary_text, updated_at)
                 VALUES (?, ?, 0, 0, '', 0, 1, ?, ?, ?)
                 """,
-                (str(file_path), content_hash, summary_hash, summary_text, int(time.time()))
+                (key, content_hash, summary_hash, summary_text, int(time.time()))
             )
         conn.commit()
 
@@ -229,7 +336,7 @@ class CacheDatabase:
             "SELECT file_path FROM file_metadata WHERE model_name = ?",
             (model_name,)
         )
-        return [row['file_path'] for row in cursor.fetchall()]
+        return [self._from_key(row['file_path']) for row in cursor.fetchall()]
 
     def remove_file(self, file_path: Path) -> None:
         """Delete metadata for a file.
@@ -240,7 +347,7 @@ class CacheDatabase:
         conn = self._get_connection()
         conn.execute(
             "DELETE FROM file_metadata WHERE file_path = ?",
-            (str(file_path),)
+            (self._key(file_path),)
         )
         conn.commit()
 
