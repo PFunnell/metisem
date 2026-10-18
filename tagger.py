@@ -12,14 +12,13 @@ from pathlib import Path
 import logging
 from typing import List, Dict
 import yaml
-import torch
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from metisem.core.files import find_markdown_files
 from metisem.core.cache import generate_embeddings
-from metisem.core.embeddings import encode_texts
+from metisem.core.embeddings import DEVICE_CHOICES, encode_texts, select_device
 from metisem.core.database import CacheDatabase
 from metisem.core.run_logger import RunLogger
 
@@ -249,6 +248,8 @@ def main() -> None:
     p.add_argument('--apply-tags', action='store_true')
     p.add_argument('--remove-tags', action='store_true')
     p.add_argument('--batch-size', type=int, default=32)
+    p.add_argument('--device', choices=DEVICE_CHOICES, default='auto',
+                   help='Embedding device; auto picks CUDA, then Apple Silicon MPS, then CPU (default: auto)')
     p.add_argument('--force-embeddings', action='store_true')
     p.add_argument('--model', default='all-MiniLM-L6-v2')
     p.add_argument('--tag-threshold', type=float, default=0.4, help='Minimum similarity to apply a tag (default: 0.4)')
@@ -294,7 +295,8 @@ def main() -> None:
         logger.error("Error: --tags-file required")
         return
     tags = load_tags(args.tags_file)
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = select_device(args.device)
+    logger.info(f"Embedding device: {device}")
     model = SentenceTransformer(args.model, device=device)
 
     if args.tag_summaries:

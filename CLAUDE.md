@@ -9,5 +9,6 @@ Metisem: Python CLI tools that link, tag, summarise (local Ollama) and retitle n
 - **Generated blocks are delimited by HTML comment markers** (`<!-- AUTO-GENERATED LINKS START -->`, `... SUMMARY START -->`, with matching `END`). Change marker handling only together with `tests/unit/test_markers.py`; a mismatch strands or duplicates blocks across a whole vault.
 - **After `title_fixer.py --apply-fixes`, re-link** (`main.py --delete-links`, then `--apply-links`): renames break existing wikilinks.
 - **Summariser needs Ollama running** at `localhost:11434`; the default model is `mistral`. A full-vault run takes hours, so don't start one unasked.
-- **Python env:** conda env in `.conda/` (not yet created in this checkout). Tests: `pytest -m "not integration"` for unit tests, `pytest` for all.
+- **Target machine is a MacBook M3 Pro (48 GB), embeddings on MPS.** The Windows machine's GPU is broken (CUDA unavailable); there, embeddings run on CPU. Keep code cross-platform: no Windows-only paths or `.bat`-only workflows.
+- **Python env:** conda env in `.conda/` (Python 3.11; interpreter `.conda/python.exe` on Windows, `.conda/bin/python` on macOS). Tests: `pytest -m "not integration"` for unit tests, `pytest` for all.
 - **UK English** in code, docs and output.

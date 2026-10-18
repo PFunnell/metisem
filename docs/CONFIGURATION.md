@@ -81,7 +81,7 @@ The tagger uses a fixed threshold (0.15-0.30 range) optimised for tag assignment
   - Fastest, slightly lower quality
   - Good for very large vaults or low-spec hardware
 
-**GPU-enabled machines (CUDA):**
+**GPU-enabled machines (CUDA or Apple Silicon MPS):**
 - **Best:** `all-mpnet-base-v2` (768-dim, ~420MB)
   - Higher quality embeddings
   - Better semantic understanding
@@ -114,15 +114,16 @@ python main.py ~/vault --apply-links --model all-mpnet-base-v2 --force-embedding
 
 Cache is model-specific - embeddings from different models are incompatible.
 
-### Verifying CUDA Availability
+### Choosing the Embedding Device
+
+`main.py` and `tagger.py` take `--device {auto,cuda,mps,cpu}`. The default, `auto`, picks CUDA, then Apple Silicon MPS, then CPU, and logs `Embedding device: <name>` at start.
 
 ```bash
-# Check if GPU will be used
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+# Check which backends torch can see
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}, MPS: {torch.backends.mps.is_available()}')"
 
-# Expected output:
-# CUDA available: True  (GPU will be used)
-# CUDA available: False (CPU fallback)
+# Force CPU (e.g. to rule out a GPU driver problem)
+python main.py ~/vault --device cpu
 ```
 
 ---

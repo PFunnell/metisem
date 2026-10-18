@@ -15,10 +15,9 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import KMeans
-import torch
-
 from metisem.core.files import find_markdown_files
 from metisem.core.cache import generate_embeddings
+from metisem.core.embeddings import DEVICE_CHOICES, select_device
 from metisem.core.markers import (
     LINK_SECTION_START,
     LINK_SECTION_END,
@@ -224,6 +223,10 @@ def main() -> None:
         help='Batch size for embedding generation'
     )
     p.add_argument(
+        '--device', choices=DEVICE_CHOICES, default='auto',
+        help='Embedding device; auto picks CUDA, then Apple Silicon MPS, then CPU (default: auto)'
+    )
+    p.add_argument(
         '--delete-links', action='store_true',
         help='Delete existing link sections before adding new ones'
     )
@@ -300,7 +303,8 @@ def main() -> None:
     files = find_markdown_files(vault)
     logger.info(f"Scanning {len(files)} markdown files...")
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = select_device(args.device)
+    logger.info(f"Embedding device: {device}")
     model = SentenceTransformer(args.model, device=device)
 
     # Generate content embeddings (always needed)

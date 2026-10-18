@@ -7,7 +7,29 @@ documents and text snippets, with caching support.
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple, Optional
+import torch
 from sentence_transformers import SentenceTransformer
+
+DEVICE_CHOICES = ('auto', 'cuda', 'mps', 'cpu')
+
+
+def select_device(requested: str = 'auto') -> str:
+    """Resolve the torch device for embedding generation.
+
+    Args:
+        requested: 'auto' picks CUDA, then Apple Silicon MPS, then CPU;
+            any other value is used as given.
+
+    Returns:
+        Device string for SentenceTransformer ('cuda', 'mps' or 'cpu')
+    """
+    if requested != 'auto':
+        return requested
+    if torch.cuda.is_available():
+        return 'cuda'
+    if torch.backends.mps.is_available():
+        return 'mps'
+    return 'cpu'
 
 
 def encode_texts(
@@ -23,7 +45,7 @@ def encode_texts(
         texts: List of text strings to embed
         model: SentenceTransformer model instance
         batch_size: Batch size for encoding
-        device: Device to use ('cpu' or 'cuda')
+        device: Device to use ('cpu', 'cuda' or 'mps')
         show_progress: Whether to show progress bar
 
     Returns:

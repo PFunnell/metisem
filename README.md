@@ -33,7 +33,7 @@ All tools leverage [Sentence Transformers](https://www.sbert.net/) for semantic 
 - **Customizable thresholds** - Control link quantity and quality with configurable similarity scores
 - **Non-invasive** - Links are inserted in clearly marked sections that can be updated or removed anytime
 - **Incremental caching** - Only re-processes files whose content has changed
-- **GPU acceleration** - Automatically uses CUDA when available for faster embedding generation
+- **GPU acceleration** - Automatically uses CUDA or Apple Silicon (MPS) when available for faster embedding generation
 
 ### Auto-Tagger
 - **Semantic tag matching** -Tags notes based on conceptual similarity to tag descriptions, not just keywords
@@ -308,9 +308,9 @@ python main.py ~/vault --max-links 5 --verbose
 ```
 
 **For GPU acceleration:**
-- Install PyTorch with CUDA support
-- Verify CUDA availability: `python -c "import torch; print(torch.cuda.is_available())"`
-- GPU is used automatically when detected
+- NVIDIA: install PyTorch with CUDA support. Apple Silicon: the standard PyTorch wheel includes MPS
+- `--device auto` (default) picks CUDA, then MPS, then CPU, and logs the choice; `--device cpu` forces CPU
+- Verify: `python -c "import torch; print(torch.cuda.is_available(), torch.backends.mps.is_available())"`
 
 ### Customization
 

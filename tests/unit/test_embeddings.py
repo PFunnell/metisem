@@ -9,7 +9,33 @@ import pytest
 from metisem.core.embeddings import (
     encode_texts,
     get_embedding_dimension,
+    select_device,
 )
+
+
+class TestSelectDevice:
+    """Tests for select_device function."""
+
+    @pytest.mark.parametrize(
+        "cuda, mps, expected",
+        [
+            (True, True, 'cuda'),
+            (False, True, 'mps'),
+            (False, False, 'cpu'),
+        ],
+    )
+    def test_auto_prefers_cuda_then_mps_then_cpu(self, mocker, cuda, mps, expected):
+        """Auto should pick the fastest available backend."""
+        mocker.patch('torch.cuda.is_available', return_value=cuda)
+        mocker.patch('torch.backends.mps.is_available', return_value=mps)
+
+        assert select_device('auto') == expected
+
+    def test_explicit_choice_is_returned_unchanged(self, mocker):
+        """An explicit device should bypass detection."""
+        mocker.patch('torch.cuda.is_available', return_value=True)
+
+        assert select_device('cpu') == 'cpu'
 
 
 class TestEncodeTexts:
