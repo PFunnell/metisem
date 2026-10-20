@@ -467,3 +467,59 @@ class TestEmbeddingCachePathHandling:
         # Path should be retrievable
         cached = cache2.get(original_path)
         assert cached is not None
+
+
+class TestEmbeddingCacheIsolation:
+    """Summary embeddings must never replace or invalidate content embeddings."""
+
+    SUMMARY = "<!-- AUTO-GENERATED SUMMARY START -->\nShort summary.\n<!-- AUTO-GENERATED SUMMARY END -->\n\n"
+
+    def _vault(self, tmp_path):
+        vault = tmp_path / "Vault"
+        vault.mkdir()
+        (vault / "a.md").write_text(self.SUMMARY + "Alpha body about gardening", encoding="utf-8")
+        (vault / "b.md").write_text(self.SUMMARY + "Beta body about databases", encoding="utf-8")
+        return vault
+
+    def test_summary_run_leaves_content_cache_intact(self, tmp_path, mock_embedding_model):
+        from metisem.core.cache import generate_embeddings
+        from metisem.core.files import find_markdown_files
+
+        vault = self._vault(tmp_path)
+        files = sorted(find_markdown_files(str(vault)))
+        content_1, _, _ = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault))
+        generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault), force=True, use_summaries=True)
+        content_2, _, stats = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault))
+
+        assert stats == {'new': 0, 'modified': 0, 'unchanged': 2, 'deleted': 0}
+        np.testing.assert_array_equal(content_1, content_2)
+
+    def test_rewriting_generated_blocks_does_not_reembed(self, tmp_path, mock_embedding_model):
+        import os
+
+        from metisem.core.cache import generate_embeddings
+        from metisem.core.files import find_markdown_files
+
+        vault = self._vault(tmp_path)
+        files = sorted(find_markdown_files(str(vault)))
+        generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault))
+
+        note = vault / "a.md"
+        note.write_text(note.read_text(encoding="utf-8").replace("Short summary.", "New summary."), encoding="utf-8")
+        st = note.stat()
+        os.utime(note, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+
+        _, _, stats = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault))
+        assert stats == {'new': 0, 'modified': 0, 'unchanged': 2, 'deleted': 0}
+
+    def test_content_and_summary_embed_different_text(self, tmp_path, mock_embedding_model):
+        from metisem.core.cache import generate_embeddings
+        from metisem.core.files import find_markdown_files
+
+        vault = self._vault(tmp_path)
+        files = sorted(find_markdown_files(str(vault)))
+        content, _, _ = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault))
+        summary, _, _ = generate_embeddings(files, mock_embedding_model, "m", 8, "cpu", str(vault), use_summaries=True)
+
+        assert not np.array_equal(content, summary)
+        np.testing.assert_array_equal(summary[0], summary[1])  # identical summaries

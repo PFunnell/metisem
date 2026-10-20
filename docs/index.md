@@ -9,6 +9,10 @@ One line per note. `/offload` adds new entries. "Local" means gitignored: the fi
 - [mac-setup.md](mac-setup.md): setting up on the M3 Pro Mac (MPS, Ollama, moving the vault with its cache, first-run checks).
 - [imports.md](imports.md): what was brought in from other repos and what was dropped.
 
+## Plans (tracked)
+
+- [plans/2026-10-20-embedding-quality-and-profiles.md](plans/2026-10-20-embedding-quality-and-profiles.md): one codebase with vault config + machine profiles; summary placement, model-independent link/tag selection, eval set, embedder swap, clustering, summariser (2026-10-20).
+
 ## State (tracked)
 
 - [state/priority1_testing_checkpoint.md](state/priority1_testing_checkpoint.md): pytest suite and CI added (2026-02-09). Latest pre-reconfiguration state.

@@ -344,7 +344,7 @@ def main() -> None:
             args.batch_size,
             device,
             vault,
-            force=True,  # Always regenerate for summaries (different content)
+            force=args.force_embeddings,  # summaries have their own cache
             use_summaries=True
         )
         # Ensure alignment with content embeddings

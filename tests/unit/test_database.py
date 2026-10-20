@@ -585,3 +585,31 @@ class TestDatabaseEdgeCases:
         value = db.get_metadata("unicode_key")
 
         assert value == unicode_value
+
+
+class TestEmbeddingState:
+    """Embedding caches keep their own state, apart from the summariser's file_metadata."""
+
+    def test_state_is_per_cache_key(self, tmp_path):
+        db = CacheDatabase(tmp_path / ".metisem" / "metisem.db")
+        note = tmp_path / "a.md"
+        db.set_embedding_state(note, "m|content|v2", "h-content", 1, 384)
+        db.set_embedding_state(note, "m|summary|v2", "h-summary", 1, 384)
+
+        assert db.get_embedding_state(note, "m|content|v2")["text_hash"] == "h-content"
+        assert db.get_embedding_state(note, "m|summary|v2")["text_hash"] == "h-summary"
+
+        db.clear_embedding_state("m|summary|v2")
+        assert db.get_embedding_state(note, "m|summary|v2") is None
+        assert db.get_embedding_paths("m|content|v2") == [str(note)]
+        db.close()
+
+    def test_does_not_touch_file_metadata(self, tmp_path):
+        db = CacheDatabase(tmp_path / ".metisem" / "metisem.db")
+        note = tmp_path / "a.md"
+        db.set_file_metadata(note, "summariser-hash", 5, 10, "", 0)
+        db.set_embedding_state(note, "m|content|v2", "other", 6, 384)
+        db.remove_embedding_state(note, "m|content|v2")
+
+        assert db.get_file_metadata(note)["content_hash"] == "summariser-hash"
+        db.close()

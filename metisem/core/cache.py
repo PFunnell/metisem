@@ -11,11 +11,27 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 from sentence_transformers import SentenceTransformer
 
-from .files import read_file_text_and_hash, get_common_vault_path, detect_file_changes
+from .files import (
+    EMBED_TEXT_VERSION,
+    detect_embedding_changes,
+    get_common_vault_path,
+    read_embedding_text_and_hash,
+)
 from .embeddings import encode_texts, get_embedding_dimension
 from .database import CacheDatabase, is_absolute_key, vault_key
 
 logger = logging.getLogger(__name__)
+
+
+def embedding_cache_key(model_name: str, use_summaries: bool = False) -> str:
+    """Name of the embedding cache for a model and text source.
+
+    Content and summary embeddings live in separate caches, and the text
+    preparation version is part of the name, so neither can overwrite or be
+    mistaken for the other, and a change to text preparation starts a fresh cache.
+    """
+    source = 'summary' if use_summaries else 'content'
+    return f"{model_name}|{source}|v{EMBED_TEXT_VERSION}"
 
 
 class EmbeddingCache:
@@ -43,7 +59,9 @@ class EmbeddingCache:
     def _get_cache_path(self) -> Path:
         """Generate cache file path based on vault and model."""
         vault_name = self.vault_path.name.replace('/', '_')
-        safe_model = self.model_name.replace('/', '_')
+        safe_model = self.model_name
+        for ch in '/\\|:':
+            safe_model = safe_model.replace(ch, '_')
         return self.cache_dir / f"embeddings_{vault_name}_{safe_model}.npz"
 
     def load(self) -> None:
@@ -180,7 +198,7 @@ class EmbeddingCache:
             file_path: Path to the file
         """
         self._data.pop(self._key(file_path), None)
-        self.db.remove_file(file_path)
+        self.db.remove_embedding_state(file_path, self.model_name)
 
 
 def generate_embeddings(
@@ -211,20 +229,19 @@ def generate_embeddings(
     if not file_paths:
         return np.array([]), [], {'new': 0, 'modified': 0, 'unchanged': 0, 'deleted': 0}
 
-    cache = EmbeddingCache(vault_path, model_name)
+    cache_key = embedding_cache_key(model_name, use_summaries)
+    cache = EmbeddingCache(vault_path, cache_key)
 
-    # Force mode: clear database and regenerate all
+    # Force mode: clear this cache only and regenerate all
     if force:
         logger.info("Force mode: clearing cache and regenerating all embeddings")
         cache._data = {}
-        # Clear all metadata for this model
-        for path_str in cache.db.get_all_paths(model_name):
-            cache.db.remove_file(Path(path_str))
+        cache.db.clear_embedding_state(cache_key)
         changes = None
     else:
         # Incremental mode: detect changes
         cache.load()
-        changes = detect_file_changes(file_paths, cache.db, model_name)
+        changes = detect_embedding_changes(file_paths, cache.db, cache_key, use_summaries)
 
         # Log change summary
         logger.info(
@@ -246,7 +263,7 @@ def generate_embeddings(
     if force:
         # Force mode: embed all files
         for path in file_paths:
-            content, file_hash = read_file_text_and_hash(path, use_summary=use_summaries)
+            content, file_hash = read_embedding_text_and_hash(path, use_summary=use_summaries)
             if file_hash:
                 file_hashes[path] = file_hash
                 to_embed.append((path, content))
@@ -263,7 +280,7 @@ def generate_embeddings(
             logger.info(f"{len(missing)} unchanged files have no stored embedding; re-embedding them")
 
         for path in changes.new_files + changes.modified_files + missing:
-            content, file_hash = read_file_text_and_hash(path, use_summary=use_summaries)
+            content, file_hash = read_embedding_text_and_hash(path, use_summary=use_summaries)
             if file_hash:
                 file_hashes[path] = file_hash
                 to_embed.append((path, content))
@@ -284,12 +301,11 @@ def generate_embeddings(
             # Update database metadata
             try:
                 stat = path.stat()
-                cache.db.set_file_metadata(
+                cache.db.set_embedding_state(
                     path,
+                    cache_key,
                     file_hashes[path],
                     stat.st_mtime_ns,
-                    stat.st_size,
-                    model_name,
                     embedding_dim or len(emb)
                 )
             except (OSError, FileNotFoundError):
