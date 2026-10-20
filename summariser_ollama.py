@@ -72,6 +72,55 @@ def insert_summary(filepath: Path, summary: str) -> None:
     except Exception as e:
         logger.error(f"Error inserting summary into {filepath}: {e}")
 
+# Context window requested from Ollama. Input is capped at ~6K words (~8K
+# tokens); the prompt and up to 512 output tokens must fit as well. Without an
+# explicit num_ctx Ollama uses its server default (4K on machines with under
+# 24 GiB of GPU memory) and silently truncates longer prompts.
+NUM_CTX = 16384
+
+_thinking_support: dict = {}
+
+
+def model_supports_thinking(model_name: str) -> bool:
+    """Return True if Ollama reports the 'thinking' capability for a model.
+
+    Result is cached per model. Any failure is treated as 'no thinking', so the
+    'think' flag is simply left out of the request.
+    """
+    if model_name not in _thinking_support:
+        try:
+            response = requests.post(
+                f'http://{OLLAMA_HOST}/api/show', json={'model': model_name}
+            )
+            capabilities = response.json().get('capabilities', []) if response.status_code == 200 else []
+        except Exception:
+            capabilities = []
+        _thinking_support[model_name] = 'thinking' in capabilities
+    return _thinking_support[model_name]
+
+
+def build_generate_payload(prompt: str, model_name: str, max_length: int) -> dict:
+    """Build the /api/generate request body for a summary."""
+    payload = {
+        'model': model_name,
+        'prompt': prompt,
+        'stream': False,
+        'options': {
+            'num_ctx': NUM_CTX,
+            'num_predict': max(512, max_length),  # Ensure enough tokens for complete summary
+            'stop': ['\n\n'],  # Stop on double newline
+            'temperature': 0.3,  # Lower temperature for more focused summaries
+            'top_k': 50,        # Reasonable top-k for coherent output
+            'top_p': 0.9,       # Reasonable nucleus sampling
+        },
+    }
+    # Reasoning models would spend num_predict on thinking and can return an
+    # empty summary; turn thinking off where the model supports it.
+    if model_supports_thinking(model_name):
+        payload['think'] = False
+    return payload
+
+
 def summarise_text(text: str, model_name: str, max_length: int) -> str:
     """Generate a summary using Ollama's API."""
     try:
@@ -103,24 +152,11 @@ def summarise_text(text: str, model_name: str, max_length: int) -> str:
             "and nuance of the discussion:"
         )
 
-        # Call Ollama API with adjusted parameters
         response = requests.post(
             f'http://{OLLAMA_HOST}/api/generate',
-            json={
-                'model': model_name,
-                'prompt': prompt,
-                'stream': False,
-                'options': {
-                    'num_predict': max(512, max_length),  # Ensure enough tokens for complete summary
-                    'stop': ['\n\n'],  # Stop on double newline
-                    'temperature': 0.3,  # Lower temperature for more focused summaries
-                    'top_k': 50,        # Reasonable top-k for coherent output
-                    'top_p': 0.9,       # Reasonable nucleus sampling
-                    'context_window': 8192  # Maximum context window
-                }
-            }
+            json=build_generate_payload(prompt, model_name, max_length)
         )
-        
+
         if response.status_code != 200:
             logger.error(f"Error from Ollama API: {response.text}")
             return ""

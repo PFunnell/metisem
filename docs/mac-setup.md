@@ -1,6 +1,6 @@
 # Mac setup (Apple Silicon)
 
-Setting up Metisem on the MacBook M3 Pro (48 GB). On this machine embeddings run on the Apple GPU (MPS) and Ollama runs natively on Metal. Code changes behind this: `dff8ad4` (device selection) and `9e23917` (cache survives moving the vault).
+Setting up Metisem on the MacBook Pro 16-inch (2023, M3 Max 16-core CPU / 40-core GPU, 48 GB). On this machine embeddings run on the Apple GPU (MPS) and Ollama runs natively on Metal. Code changes behind this: `dff8ad4` (device selection) and `9e23917` (cache survives moving the vault).
 
 ## 1. Prerequisites
 

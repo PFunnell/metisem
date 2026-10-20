@@ -10,6 +10,6 @@ Metisem: Python CLI tools that link, tag, summarise (local Ollama) and retitle n
 - **After `title_fixer.py --apply-fixes`, re-link** (`main.py --delete-links`, then `--apply-links`): renames break existing wikilinks.
 - **Cache keys in `.metisem/` are vault-relative POSIX paths** so a copied vault (Windows → Mac) keeps its cache; never write absolute paths into the cache. `--force-summaries` overwrites every summary block in the vault.
 - **Summariser needs Ollama running** at `localhost:11434`; the default model is `mistral`. A full-vault run takes hours, so don't start one unasked.
-- **Target machine is a MacBook M3 Pro (48 GB), embeddings on MPS.** The Windows machine's GPU is broken (CUDA unavailable); there, embeddings run on CPU. Keep code cross-platform: no Windows-only paths or `.bat`-only workflows.
+- **Target machine is a MacBook Pro 16-inch (2023), M3 Max 16-core CPU / 40-core GPU, 48 GB; embeddings on MPS.** The Windows machine's GPU is broken (CUDA unavailable); there, embeddings run on CPU. Keep code cross-platform: no Windows-only paths or `.bat`-only workflows.
 - **Python env:** conda env in `.conda/` (Python 3.11; interpreter `.conda/python.exe` on Windows, `.conda/bin/python` on macOS). Tests: `pytest -m "not integration"` for unit tests, `pytest` for all.
 - **UK English** in code, docs and output.

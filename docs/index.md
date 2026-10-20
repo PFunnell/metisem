@@ -6,7 +6,7 @@ One line per note. `/offload` adds new entries. "Local" means gitignored: the fi
 
 - [CONFIGURATION.md](CONFIGURATION.md): every CLI flag, threshold trade-offs, tag descriptor authoring.
 - [EXAMPLES.md](EXAMPLES.md): worked runs with terminal output.
-- [mac-setup.md](mac-setup.md): setting up on the M3 Pro Mac (MPS, Ollama, moving the vault with its cache, first-run checks).
+- [mac-setup.md](mac-setup.md): setting up on the MacBook Pro (M3 Max) (MPS, Ollama, moving the vault with its cache, first-run checks).
 - [imports.md](imports.md): what was brought in from other repos and what was dropped.
 
 ## State (tracked)
