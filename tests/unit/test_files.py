@@ -414,3 +414,45 @@ class TestDetectFileChanges:
         # File should be detected as deleted
         assert len(changes.deleted_files) == 1
         assert changes.deleted_files[0] == file_path
+
+
+class TestEmbeddingText:
+    """Embedded text excludes front matter and generated blocks."""
+
+    SUMMARY = "<!-- AUTO-GENERATED SUMMARY START -->\nA summary.\n<!-- AUTO-GENERATED SUMMARY END -->\n"
+    LINKS = "\n<!-- AUTO-GENERATED LINKS START -->\n## Related Notes\n[[Other]]\n<!-- AUTO-GENERATED LINKS END -->\n"
+
+    def test_strips_front_matter_summary_and_links(self):
+        from metisem.core.files import strip_generated_content
+        note = "---\ntags:\n- ai\n---\n" + self.SUMMARY + "\nBody text." + self.LINKS
+        assert strip_generated_content(note) == "Body text."
+
+    def test_strips_front_matter_below_misplaced_summary(self):
+        from metisem.core.files import strip_generated_content
+        note = self.SUMMARY + "\n---\ntitle: Chat\n---\nBody text."
+        assert strip_generated_content(note) == "Body text."
+
+    def test_strips_two_front_matter_blocks(self):
+        from metisem.core.files import strip_generated_content
+        note = "---\ntags:\n- ai\n---\n" + self.SUMMARY + "\n---\ntitle: Chat\n---\nBody text."
+        assert strip_generated_content(note) == "Body text."
+
+    def test_keeps_horizontal_rules_in_body(self):
+        from metisem.core.files import strip_generated_content
+        note = "Intro\n\n---\n\nMore\n\n---\n"
+        assert strip_generated_content(note) == "Intro\n\n---\n\nMore\n\n---"
+
+    def test_summary_source_falls_back_to_clean_body(self):
+        from metisem.core.files import embedding_text
+        note = "---\ntitle: x\n---\nBody text." + self.LINKS
+        assert embedding_text(note, use_summary=True) == "Body text."
+        assert embedding_text(self.SUMMARY + "Body", use_summary=True) == "A summary."
+
+    def test_hash_ignores_generated_block_changes(self, tmp_path):
+        from metisem.core.files import read_embedding_text_and_hash
+        path = tmp_path / "n.md"
+        path.write_text("Body text.", encoding="utf-8")
+        _, before = read_embedding_text_and_hash(path)
+        path.write_text(self.SUMMARY + "Body text." + self.LINKS, encoding="utf-8")
+        _, after = read_embedding_text_and_hash(path)
+        assert before == after

@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
+from .markers import LINK_SECTION_START, LINK_SECTION_END, SUMMARY_START, SUMMARY_END, remove_marker_block
+
+# Version of the text preparation applied before embedding. Bump it whenever
+# embedding_text() changes, so caches built from the old text are not reused.
+EMBED_TEXT_VERSION = 2
+
+_FRONT_MATTER = re.compile(r'\A---[ \t]*\n.*?\n---[ \t]*(?:\n|\Z)', re.DOTALL)
+
 
 def find_markdown_files(vault_path: str) -> List[Path]:
     """Find all markdown files in the vault directory recursively.
@@ -48,6 +56,47 @@ def read_file_text_and_hash(path: Path, use_summary: bool = False) -> Tuple[Opti
         return content, hasher.hexdigest()
     except Exception:
         return None, None
+
+
+def strip_generated_content(content: str) -> str:
+    """Remove YAML front matter and metisem's generated blocks from note text.
+
+    Generated summary and link blocks are removed wherever they sit; front
+    matter is removed from the top of the note, including where a summary block
+    was placed above it or a second front matter block follows the first.
+    """
+    text = remove_marker_block(content, SUMMARY_START, SUMMARY_END)
+    text = remove_marker_block(text, LINK_SECTION_START, LINK_SECTION_END)
+    while True:
+        stripped = text.lstrip()
+        match = _FRONT_MATTER.match(stripped)
+        if not match:
+            break
+        text = stripped[match.end():]
+    return text.strip()
+
+
+def embedding_text(content: str, use_summary: bool = False) -> str:
+    """Text to embed for a note.
+
+    Content embeddings use the note body only, so generated summaries, links and
+    tags don't feed back into similarity. Summary embeddings use the summary
+    block, falling back to the note body when there is no summary.
+    """
+    if use_summary:
+        summary = extract_summary(content)
+        if summary:
+            return summary
+    return strip_generated_content(content)
+
+
+def read_embedding_text_and_hash(path: Path, use_summary: bool = False) -> Tuple[Optional[str], Optional[str]]:
+    """Read a note and return (text to embed, SHA256 of that text), or (None, None) on error."""
+    try:
+        text = embedding_text(path.read_text(encoding='utf-8'), use_summary)
+    except Exception:
+        return None, None
+    return text, hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
 def extract_summary(content: str) -> Optional[str]:
@@ -220,6 +269,54 @@ def detect_file_changes(
     current_paths = {file_path for file_path in current_files}
     deleted_files = [p for p in cached_paths if p not in current_paths]
 
+    return ChangeSet(
+        new_files=new_files,
+        modified_files=modified_files,
+        deleted_files=deleted_files,
+        unchanged_files=unchanged_files
+    )
+
+
+def detect_embedding_changes(
+    current_files: List[Path],
+    db,  # CacheDatabase instance
+    cache_key: str,
+    use_summary: bool = False
+) -> ChangeSet:
+    """Detect new, modified, deleted and unchanged files for one embedding cache.
+
+    Like detect_file_changes, but reads the embedding_state table for cache_key
+    and compares hashes of the embedded text rather than the whole file, so
+    rewriting a note's generated blocks doesn't count as a change. When the
+    mtime moved but the text didn't, the stored mtime is refreshed.
+    """
+    stored = {Path(p) for p in db.get_embedding_paths(cache_key)}
+    new_files: List[Path] = []
+    modified_files: List[Path] = []
+    unchanged_files: List[Path] = []
+
+    for file_path in current_files:
+        state = db.get_embedding_state(file_path, cache_key)
+        if state is None:
+            new_files.append(file_path)
+            continue
+        try:
+            mtime_ns = file_path.stat().st_mtime_ns
+        except OSError:
+            modified_files.append(file_path)
+            continue
+        if state['mtime_ns'] == mtime_ns:
+            unchanged_files.append(file_path)
+            continue
+        _, text_hash = read_embedding_text_and_hash(file_path, use_summary)
+        if text_hash and text_hash == state['text_hash']:
+            db.set_embedding_state(file_path, cache_key, text_hash, mtime_ns, state['embedding_dim'])
+            unchanged_files.append(file_path)
+        else:
+            modified_files.append(file_path)
+
+    current = set(current_files)
+    deleted_files = [p for p in stored if p not in current]
     return ChangeSet(
         new_files=new_files,
         modified_files=modified_files,

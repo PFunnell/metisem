@@ -81,6 +81,17 @@ class CacheDatabase:
     CREATE INDEX IF NOT EXISTS idx_mtime ON file_metadata(mtime_ns);
     CREATE INDEX IF NOT EXISTS idx_model ON file_metadata(model_name);
 
+    CREATE TABLE IF NOT EXISTS embedding_state (
+        file_path TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        text_hash TEXT NOT NULL,
+        mtime_ns INTEGER NOT NULL,
+        embedding_dim INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (file_path, cache_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_embedding_key ON embedding_state(cache_key);
+
     CREATE TABLE IF NOT EXISTS tag_embeddings (
         tag_name TEXT NOT NULL,
         tag_description TEXT NOT NULL,
@@ -349,6 +360,55 @@ class CacheDatabase:
             "DELETE FROM file_metadata WHERE file_path = ?",
             (self._key(file_path),)
         )
+        conn.commit()
+
+    # --- Embedding state (one row per file per embedding cache) ---
+    # Kept apart from file_metadata, which the summariser owns: each embedding
+    # cache (model x content/summary x text version) tracks its own hashes.
+
+    def get_embedding_state(self, file_path: Path, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Stored hash, mtime and dimension of a file's embedding in one cache, or None."""
+        row = self._get_connection().execute(
+            "SELECT text_hash, mtime_ns, embedding_dim FROM embedding_state WHERE file_path = ? AND cache_key = ?",
+            (self._key(file_path), cache_key)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def set_embedding_state(
+        self, file_path: Path, cache_key: str, text_hash: str, mtime_ns: int, embedding_dim: int
+    ) -> None:
+        """Record the embedded text's hash and the file's mtime for one cache."""
+        conn = self._get_connection()
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO embedding_state
+            (file_path, cache_key, text_hash, mtime_ns, embedding_dim, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (self._key(file_path), cache_key, text_hash, mtime_ns, embedding_dim, int(time.time()))
+        )
+        conn.commit()
+
+    def get_embedding_paths(self, cache_key: str) -> List[str]:
+        """Paths of all files with state in one embedding cache."""
+        rows = self._get_connection().execute(
+            "SELECT file_path FROM embedding_state WHERE cache_key = ?", (cache_key,)
+        ).fetchall()
+        return [self._from_key(row['file_path']) for row in rows]
+
+    def remove_embedding_state(self, file_path: Path, cache_key: str) -> None:
+        """Forget a file in one embedding cache."""
+        conn = self._get_connection()
+        conn.execute(
+            "DELETE FROM embedding_state WHERE file_path = ? AND cache_key = ?",
+            (self._key(file_path), cache_key)
+        )
+        conn.commit()
+
+    def clear_embedding_state(self, cache_key: str) -> None:
+        """Forget every file in one embedding cache."""
+        conn = self._get_connection()
+        conn.execute("DELETE FROM embedding_state WHERE cache_key = ?", (cache_key,))
         conn.commit()
 
     def get_tag_embedding(self, tag_name: str, model_name: str) -> Optional[Dict[str, Any]]:
